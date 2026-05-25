@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rehab Tracker</title>
+    <!-- MediaPipe dependencies (CDN). Pose runs for elbow tracking;
+         Hands runs for wrist + finger tracking. drawing_utils gives us
+         the same drawConnectors/drawLandmarks helpers MediaPipe uses
+         on its own demo pages. v1.9: dropped camera_utils — we manage
+         the video stream ourselves so the user can pick which camera
+         to use. -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

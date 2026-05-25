@@ -1,0 +1,23 @@
+/* Global reset — Aether Garden */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  background: #0c0a1f;
+  color: #e8e4f0;
+}
+
+#root {
+  min-height: 100vh;
+}
