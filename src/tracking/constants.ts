@@ -4,8 +4,15 @@
 /** EMA smoothing blend factor (0–1). Higher = more responsive, more jittery. */
 export const SMOOTHING_FACTOR = 0.3;
 
-/** Minimum landmark visibility to consider valid. */
+/** Minimum landmark visibility to consider valid (used by post-hoc
+ *  anomaly classification — frames below this become `low_visibility`). */
 export const VISIBILITY_THRESHOLD = 0.5;
+
+/** Lower per-landmark visibility gate used by live trackers to reject
+ *  hallucinated / out-of-frame landmarks. Trackers compute nothing when a
+ *  required landmark falls below this — same value the elbow tracker
+ *  uses internally for its own arm-trackability check. */
+export const VISIBILITY_TRACK_THRESHOLD = 0.2;
 
 /** Hysteresis margin before switching active elbow side. */
 export const ELBOW_SIDE_SWITCH_MARGIN = 0.08;
