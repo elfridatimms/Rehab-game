@@ -1,31 +1,20 @@
 import type { HolisticResults, TrackingState, Landmark } from '../../types';
 
-// ─── Wrist overlay — exact restore of deployed `My` function ──
-// (deploy 6a11b4504e219cdcb50d1107, bundle index-vpkjw17t.js)
+// Minimal wrist overlay — see docs/SPEC.md "Wrist angle".
 //
-// One arc per hand, drawn from a horizontal reference axis through the
-// wrist to the actual hand direction (wrist → middle MCP). Label is
-// "+X°" for extension and "−X°" for flexion. Signed range −90…+90 from
-// updateWristExtension. No tick marks, no fancy goniometer.
+// One horizontal grey reference line through the wrist (= 0°), one
+// colored line wrist → MCP (= hand vector), and the angle in degrees
+// near the wrist. All three derive from the SAME landmarks (lm0 and
+// lm9) that feed updateWristExtension — the visual geometry and the
+// displayed number cannot diverge.
 
 const COLORS = {
-  skeleton: 'rgba(180, 180, 180, 0.55)',
-  axisLeft: '#22d3ee',
-  axisRight: '#f472b6',
-  reference: 'rgba(255, 255, 255, 0.5)',
-  arc: '#fbbf24',
+  reference: 'rgba(180, 180, 180, 0.75)', // horizontal 0° axis (grey)
+  activeLeft: '#22d3ee',                    // hand vector (left hand)
+  activeRight: '#f472b6',                   // hand vector (right hand)
   text: '#ffffff',
-  textBg: 'rgba(0, 0, 0, 0.55)',
+  textBg: 'rgba(0, 0, 0, 0.65)',
 };
-
-const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
-  [0, 1], [1, 2], [2, 3], [3, 4],
-  [0, 5], [5, 6], [6, 7], [7, 8],
-  [0, 9], [9, 10], [10, 11], [11, 12],
-  [0, 13], [13, 14], [14, 15], [15, 16],
-  [0, 17], [17, 18], [18, 19], [19, 20],
-  [5, 9], [9, 13], [13, 17],
-];
 
 function mirror(x: number): number {
   return 1 - x;
@@ -35,43 +24,20 @@ function toCanvas(l: Landmark, w: number, h: number): [number, number] {
   return [mirror(l.x) * w, l.y * h];
 }
 
-function drawHandSkeleton(
-  ctx: CanvasRenderingContext2D,
-  landmarks: Landmark[],
-  w: number,
-  h: number,
-): void {
-  ctx.beginPath();
-  for (const [a, b] of HAND_CONNECTIONS) {
-    if (!landmarks[a] || !landmarks[b]) continue;
-    const [ax, ay] = toCanvas(landmarks[a], w, h);
-    const [bx, by] = toCanvas(landmarks[b], w, h);
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(bx, by);
-  }
-  ctx.stroke();
-  for (let i = 0; i < Math.min(landmarks.length, 21); i++) {
-    if (!landmarks[i]) continue;
-    const [x, y] = toCanvas(landmarks[i], w, h);
-    ctx.beginPath();
-    ctx.arc(x, y, 2, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
 function drawLabel(
   ctx: CanvasRenderingContext2D,
   text: string,
   x: number,
   y: number,
-  font = 'bold 16px "Inter", system-ui, sans-serif',
+  fontSize = 20,
 ): void {
+  const font = `bold ${fontSize}px "Inter", system-ui, sans-serif`;
   ctx.font = font;
   const m = ctx.measureText(text);
-  const padX = 6;
-  const padY = 3;
+  const padX = 8;
+  const padY = 4;
   const tw = m.width + padX * 2;
-  const th = parseInt(font, 10) + padY * 2;
+  const th = fontSize + padY * 2;
   ctx.fillStyle = COLORS.textBg;
   ctx.fillRect(x - tw / 2, y - th, tw, th);
   ctx.fillStyle = COLORS.text;
@@ -93,94 +59,62 @@ export function drawWristOverlay(
     {
       landmarks: results.leftHandLandmarks,
       handState: state.leftHand,
-      label: 'L' as const,
-      axisColor: COLORS.axisLeft,
+      activeColor: COLORS.activeLeft,
     },
     {
       landmarks: results.rightHandLandmarks,
       handState: state.rightHand,
-      label: 'R' as const,
-      axisColor: COLORS.axisRight,
+      activeColor: COLORS.activeRight,
     },
   ];
 
   ctx.lineCap = 'round';
 
   for (const hand of hands) {
+    // Visibility gate: need both landmarks the tracker uses (0 + 9).
+    // If either is missing or the tracker couldn't produce an angle
+    // this frame, draw nothing for this hand.
     if (!hand.landmarks || hand.landmarks.length < 10) continue;
-
-    // Grey hand skeleton.
-    ctx.strokeStyle = COLORS.skeleton;
-    ctx.fillStyle = COLORS.skeleton;
-    ctx.lineWidth = 1.5;
-    drawHandSkeleton(ctx, hand.landmarks, w, h);
+    const angle = hand.handState.smoothedWristExtensionDeg;
+    if (angle == null) continue;
 
     const wrist = hand.landmarks[0];
     const mcp = hand.landmarks[9];
+    if (!wrist || !mcp) continue;
+
     const [wx, wy] = toCanvas(wrist, w, h);
     const [mx, my] = toCanvas(mcp, w, h);
 
-    // Wrist→MCP axis line in side colour with end dots.
-    ctx.strokeStyle = hand.axisColor;
-    ctx.lineWidth = 3.5;
+    // Hand length on screen → use as the half-length of the horizontal
+    // reference so the reference is visually proportional to the hand.
+    const handLen = Math.hypot(mx - wx, my - wy);
+    const refHalf = Math.max(40, handLen);
+
+    // Reference: thin grey HORIZONTAL line through the wrist (= 0° axis).
+    ctx.strokeStyle = COLORS.reference;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(wx - refHalf, wy);
+    ctx.lineTo(wx + refHalf, wy);
+    ctx.stroke();
+
+    // Active: thicker coloured line wrist → MCP (the hand vector that
+    // feeds the angle formula).
+    ctx.strokeStyle = hand.activeColor;
+    ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.moveTo(wx, wy);
     ctx.lineTo(mx, my);
     ctx.stroke();
-    ctx.fillStyle = hand.axisColor;
+
+    // Pivot dot at the wrist.
+    ctx.fillStyle = hand.activeColor;
     ctx.beginPath();
     ctx.arc(wx, wy, 6, 0, Math.PI * 2);
     ctx.fill();
-    ctx.beginPath();
-    ctx.arc(mx, my, 4, 0, Math.PI * 2);
-    ctx.fill();
 
-    // Horizontal reference line (dashed white) on the side the hand
-    // points to, length = hand length.
-    const dirX = mx >= wx ? 1 : -1;
-    const handLen = Math.hypot(mx - wx, my - wy);
-    ctx.strokeStyle = COLORS.reference;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 4]);
-    ctx.beginPath();
-    ctx.moveTo(wx, wy);
-    ctx.lineTo(wx + dirX * handLen, wy);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    const D = hand.handState.smoothedWristExtensionDeg;
-    if (D == null) continue;
-
-    // Arc from horizontal reference to actual hand direction.
-    const handAngleCanvas = Math.atan2(my - wy, mx - wx);
-    const refAngle = dirX > 0 ? 0 : Math.PI;
-    const arcR = Math.max(20, handLen * 0.45);
-
-    ctx.strokeStyle = COLORS.arc;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    let p = refAngle;
-    let delta = handAngleCanvas - p;
-    while (delta > Math.PI) delta -= 2 * Math.PI;
-    while (delta < -Math.PI) delta += 2 * Math.PI;
-    ctx.arc(wx, wy, arcR, p, p + delta, delta < 0);
-    ctx.stroke();
-
-    // "+45°" / "−45°" label at midpoint of arc, pushed outward.
-    const midA = p + delta / 2;
-    const labelR = arcR + 24;
-    const lx = wx + Math.cos(midA) * labelR;
-    const ly = wy + Math.sin(midA) * labelR;
-    const sign = D >= 0 ? '+' : '−';
-    drawLabel(ctx, `${sign}${Math.abs(Math.round(D))}°`, lx, ly);
-
-    // Hand label "L" / "R" near the MCP.
-    drawLabel(
-      ctx,
-      hand.label,
-      mx,
-      my - 6,
-      'bold 12px "Inter", system-ui, sans-serif',
-    );
+    // Numeric label near the wrist (above-and-offset so it doesn't sit
+    // on the lines).
+    drawLabel(ctx, `${Math.round(angle)}°`, wx, wy - 14);
   }
 }

@@ -26,15 +26,9 @@ export function createHandState(): HandTrackingState {
 }
 
 /** 3D wrist deviation magnitude in degrees, computed entirely from Pose
- *  world landmarks.
- *
- *   forearm  = elbow → wrist
- *   hand     = wrist → midpoint(pinky_knuckle, index_knuckle)
- *   interior = angle(forearm, hand)
- *   deviation = |180° − interior|     // 0° at neutral, 90° at full bend
- *
- *  Returns null if any required landmark is missing. UNSIGNED — captures
- *  the magnitude of wrist bend regardless of direction. */
+ *  world landmarks. UNSIGNED — captures the magnitude of wrist bend
+ *  regardless of direction. Used for prayer-stretch analysis only;
+ *  separate data path from updateWristExtension. */
 export function computeWrist3DDeg(
   poseWorldLandmarks: Landmark[] | undefined,
   side: 'left' | 'right',
@@ -87,35 +81,29 @@ export function updateWrist3D(
 }
 
 /**
- * Wrist flexion / extension — exact restore of the deployed formula
- * (deploy 6a11b4504e219cdcb50d1107, bundle index-vpkjw17t.js).
+ * Wrist angle — restored deploy formula. See docs/SPEC.md "Wrist angle".
  *
- * CONVENTION:
- *   0    = neutral (hand in line with the forearm, horizontal)
- *   +    = extension (hand bent up / backward), up to ~+90
- *   −    = flexion  (hand bent down / forward), down to ~−90
+ * Reference is a FIXED HORIZONTAL line through the wrist landmark.
+ * The angle is the deviation of the hand vector (lm0 → lm9) from that
+ * horizontal — NOT from vertical, NOT from the forearm direction.
  *
- * The key trick is taking the ABSOLUTE VALUE of the horizontal component
- * before atan2. That collapses left vs right and the mirrored display
- * (scale(-1,1)) into the same case — the formula behaves identically
- * regardless of which hand is being tracked or how the canvas is
- * mirrored. Do NOT add any per-hand negation on top: abs() already
- * handles it. Future edits must preserve neutral = 0, extension > 0,
- * flexion < 0.
- *
- * @inputs
- * - handLandmarks[0]  (wrist root)
- * - handLandmarks[9]  (middle-finger MCP)
- *
- * @formula
- *   n = middleMCP.x − wrist.x          // horizontal component
- *   i = wrist.y − middleMCP.y          // vertical component (screen y inverted)
+ *   n = mcp.x   − wrist.x          // horizontal component (signed)
+ *   i = wrist.y − mcp.y            // vertical component (screen-y inverted)
  *   angle_deg = atan2(i, |n|) * 180 / π
  *
- * @range  −90° … +90°
+ * Range: −90° … +90°.
+ *   +90 = hand straight up    (extended hand on a vertical forearm)
+ *    0  = hand horizontal     (90° flex/ext from a vertical-forearm neutral)
+ *   −90 = hand straight down  (hyperextension past horizontal)
  *
- * @smoothing  EMA, factor SMOOTHING_FACTOR. Peak tracked on the smoothed
- *             value (max extension reading observed).
+ * Taking the absolute value of the horizontal component collapses
+ * left-vs-right and the canvas mirror into the same case, so the
+ * formula behaves identically for both hands. Do NOT add a per-hand
+ * sign flip on top — abs() already handles it.
+ *
+ * The forearm is NOT tracked. The "neutral=90" interpretation holds
+ * only while the forearm is vertical and in the plane of the camera
+ * (limitation documented in SPEC).
  */
 export function updateWristExtension(
   state: HandTrackingState,
@@ -131,8 +119,8 @@ export function updateWristExtension(
   const wrist = handLandmarks[0];
   const middleMCP = handLandmarks[9];
 
-  const n = middleMCP.x - wrist.x;           // horizontal component
-  const i = wrist.y - middleMCP.y;           // vertical component (screen-y inverted)
+  const n = middleMCP.x - wrist.x;
+  const i = wrist.y - middleMCP.y;
   const angleDeg = (Math.atan2(i, Math.abs(n)) * 180) / Math.PI;
 
   state.rawWristExtensionDeg = angleDeg;

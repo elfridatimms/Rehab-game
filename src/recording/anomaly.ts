@@ -11,8 +11,9 @@ import type { EnrichedFrameRow, FrameRow, FrameStatus, SideKey } from './types';
 /** Anatomically plausible range per mode (inclusive). */
 export const PLAUSIBLE_RANGE: Record<GameMode, { min: number; max: number }> = {
   elbow: { min: 0, max: 180 },
-  // v1.14: wrist is signed −90…+90 (neutral = 0, extension > 0, flexion
-  // < 0). See wristTracker.updateWristExtension.
+  // v1.18: wrist is the deploy formula atan2(i, |n|) — signed range
+  // −90…+90 (deflection from a fixed horizontal reference). Margin
+  // to ±100 absorbs occasional out-of-bounds reads at the singularity.
   wrist: { min: -100, max: 100 },
   fingers: { min: 0, max: 100 },
 };
@@ -271,9 +272,10 @@ export interface SideRawPeaks {
 /**
  * "Peak" of the raw signal.
  *   elbow / fingers: unsigned, peak = max(raw).
- *   wrist: signed (neutral = 0), peak = max(|raw|); reported value is
- *          the signed reading at that frame so flexion vs extension
- *          can be distinguished post-hoc.
+ *   wrist: signed deflection from horizontal (range −90…+90). Peak =
+ *          frame with the largest |raw| — i.e. furthest from horizontal.
+ *          The reported value is the signed reading at that frame so
+ *          "hand-up" vs "hand-down" can be told apart post-hoc.
  *
  * Single pass computes both `peakAll` and `peakClean` simultaneously.
  */

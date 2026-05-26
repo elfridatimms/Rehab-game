@@ -81,3 +81,79 @@ convention above (fully extended ≈ 180).
   **same** Pose landmark indices that feed the angle computation, so the
   visual lines and the number cannot disagree.
 - No full skeleton, no goniometer disc, no other decoration.
+
+---
+
+## Wrist angle (active mode: `wrist`)
+
+### Landmarks (MediaPipe Hands)
+
+| Joint | Index |
+|---|---|
+| Wrist root | `0` |
+| Middle-finger MCP | `9` |
+
+Both hands are handled independently; the same formula applies to left
+and right.
+
+### Reference
+
+`0°` is the **fixed horizontal line through the wrist landmark (lm0)**.
+The angle is the deviation of the hand vector from that horizontal —
+NOT measured from vertical, NOT measured from the forearm direction.
+
+The wrist exercise assumes the **forearm is held vertical and in the
+plane of the camera** (no lean toward/away). In that pose a hand
+extended in line with the forearm points straight up, so:
+
+- Extended hand (vertical) → **~90°**
+- As the wrist bends sideways → the number drops below 90 toward 0
+- Hand reaches horizontal → 0°
+- Hand bent past horizontal (rare hyperextension) → negative
+
+### Formula
+
+Hand vector goes from the wrist landmark to the middle-finger MCP:
+
+```
+n = mcp.x   − wrist.x          // horizontal component (signed)
+i = wrist.y − mcp.y            // vertical component (screen y inverted)
+angle_deg = atan2(i, |n|) * 180 / π
+```
+
+Taking the absolute value of the horizontal component collapses
+left-vs-right and the canvas mirror (`scale(-1, 1)`) into the same
+case, so the formula behaves identically regardless of which hand is
+tracked or how the canvas is displayed.
+
+Range: **−90° … +90°**.
+- `+90` = hand straight up (extended hand on a vertical forearm)
+- `0`   = hand horizontal (90° flexion or extension from neutral)
+- `−90` = hand straight down (hyperextension past horizontal)
+
+### 2D / model limitation (literal, do not change)
+
+The forearm is NOT tracked by the Hands model. Neutral=90 is a fixed
+assumption that holds **only while the forearm is vertical and in the
+plane of the camera**. A tilted forearm or motion toward/away from the
+camera will not be detected — the formula will still return a number,
+but its interpretation as "wrist flexion/extension" is no longer valid.
+
+### Visibility / framing
+
+- Wrist (lm0) and middle MCP (lm9) must be present.
+- If either is missing the per-hand smoothed value is set to `null` and
+  the overlay does not draw for that hand.
+- Hand visibility from MediaPipe Hands is binary (no per-landmark
+  visibility score), so the gate is simply "are the landmarks there?".
+
+### Overlay drawing (game/wrist/WristOverlay.ts)
+
+- **Reference line:** a thin grey **horizontal** line through the
+  canvas position of the wrist (lm0). This is the visible `0°` axis.
+- **Active line:** the hand vector wrist → MCP, drawn thicker and in a
+  side colour. Rotates as the wrist bends.
+- **Numeric label:** the angle in degrees, drawn near the wrist.
+- Both lines and the number derive from the **same** Hands landmark
+  indices (lm0 and lm9) that feed the angle computation, so the visual
+  lines and the number cannot disagree.

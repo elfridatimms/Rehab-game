@@ -300,9 +300,9 @@ export function useTracking(activeMode: GameMode, frameListenerRef?: FrameListen
       updateForearmRotation(s.elbow, results.poseLandmarks);
     } else {
       // wrist and fingers both consume hand landmarks.
-      // v1.14: updateWristExtension is hand-only again — it uses the old
-      // atan2(i, |n|) formula which collapses left/right and the mirror
-      // automatically.
+      // v1.18: updateWristExtension is hand-only again — it uses the
+      // restored deploy formula atan2(i, |n|) with a fixed horizontal
+      // reference, so it does not need the elbow / pose at all.
       updateWristExtension(s.leftHand, results.leftHandLandmarks);
       updateWristExtension(s.rightHand, results.rightHandLandmarks);
       updateFingerOpenness(s.leftHand, results.leftHandLandmarks);
