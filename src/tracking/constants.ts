@@ -22,6 +22,16 @@ export const VISIBILITY_THRESHOLD = 0.5;
  *  uses internally for its own arm-trackability check. */
 export const VISIBILITY_TRACK_THRESHOLD = 0.2;
 
+/** v1.21: camera aspect ratio (width / height). useTracking constrains
+ *  the stream to 640×480 → 4/3. Used by trackers to put x and y
+ *  components into the same pixel unit before computing angles or
+ *  distances — without this scaling, normalised x is "image-widths" and
+ *  normalised y is "image-heights" and the geometry of a non-square
+ *  frame is distorted (a few degrees of error on angles; ratio errors
+ *  on finger openness when palm/tip vectors point in different
+ *  directions). */
+export const CAMERA_ASPECT_W_OVER_H = 4 / 3;
+
 /** Hysteresis margin before switching active elbow side. */
 export const ELBOW_SIDE_SWITCH_MARGIN = 0.08;
 

@@ -2,6 +2,7 @@ import type { Landmark, ElbowState } from '../types';
 import {
   SMOOTHING_FACTOR,
   ELBOW_SIDE_SWITCH_MARGIN,
+  CAMERA_ASPECT_W_OVER_H,
 } from './constants';
 
 // v1.7: align with how MediaPipe's demos behave — they draw what the
@@ -31,14 +32,6 @@ const elbowDebugCounters: WeakMap<ElbowState, number> = new WeakMap();
 const ELBOW_DEBUG_EVERY_N_FRAMES = 30;
 
 // ─── Pure Geometry ────────────────────────────────────────────
-
-/** Camera aspect ratio (width / height). useTracking constrains the
- *  stream to 640×480 → 4/3. Used by elbowFlexionDeg2D to put x and y
- *  components into the same pixel unit before computing the angle —
- *  without this scaling, normalised x is "image-widths" and normalised
- *  y is "image-heights" and the geometry of a non-square frame is
- *  distorted (a few degrees of error). */
-const CAMERA_ASPECT_W_OVER_H = 4 / 3;
 
 /** v1.20: clinical-convention elbow angle in 2D image plane, with x
  *  scaled by camera aspect ratio so the angle is computed in pixel

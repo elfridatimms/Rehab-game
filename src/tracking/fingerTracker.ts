@@ -3,6 +3,7 @@ import {
   FINGER_RATIO_CLOSED,
   FINGER_RATIO_OPEN,
   FINGER_SMOOTHING_FACTOR,
+  CAMERA_ASPECT_W_OVER_H,
 } from './constants';
 
 // ─── EMA helper ───────────────────────────────────────────────
@@ -12,8 +13,13 @@ function ema(raw: number, prev: number | null): number {
 }
 
 // ─── Distance / angle helpers ─────────────────────────────────
+// v1.21: x scaled by camera aspect so the distance is in true pixel
+// units. Matters most when palm and tip vectors point in different
+// directions (e.g. thumb horizontal, fingers vertical).
 function dist(a: Landmark, b: Landmark): number {
-  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+  const dx = (a.x - b.x) * CAMERA_ASPECT_W_OVER_H;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 function angleAt(v: Landmark, a: Landmark, b: Landmark): number {

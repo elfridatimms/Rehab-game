@@ -1,5 +1,9 @@
 import type { Landmark, HandTrackingState } from '../types';
-import { SMOOTHING_FACTOR, WRIST_SMOOTHING_FACTOR } from './constants';
+import {
+  SMOOTHING_FACTOR,
+  WRIST_SMOOTHING_FACTOR,
+  CAMERA_ASPECT_W_OVER_H,
+} from './constants';
 
 // ─── EMA helpers ──────────────────────────────────────────────
 // v1.19: wrist uses its own (heavier) factor — 0.7 vs the elbow's 0.3.
@@ -127,7 +131,10 @@ export function updateWristExtension(
   const wrist = handLandmarks[0];
   const middleMCP = handLandmarks[9];
 
-  const n = middleMCP.x - wrist.x;
+  // v1.21: x scaled by camera aspect (4/3) so x and y are in the same
+  // pixel unit. Without this the angle is computed in distorted
+  // normalised space.
+  const n = (middleMCP.x - wrist.x) * CAMERA_ASPECT_W_OVER_H;
   const i = wrist.y - middleMCP.y;
   const fromHorizontal = (Math.atan2(i, Math.abs(n)) * 180) / Math.PI;
   const angleDeg = 90 - fromHorizontal;
