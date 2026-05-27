@@ -46,6 +46,29 @@ The angle is correct as long as the arm is parallel to the camera plane.
 Motion towards or away from the camera projects onto the image plane and
 underestimates the true 3D angle.
 
+### Foreshorten detection (DEBUG PASS — threshold to be calibrated)
+
+When the forearm points toward or away from the camera, the 2D
+projection of the forearm shrinks while its true 3D length is
+unchanged. We detect this condition with a length ratio:
+
+```
+len2D = | wrist2D − elbow2D |       // image plane, x scaled by aspect
+len3D = | wrist3D − elbow3D |       // Pose worldLandmarks (METERS)
+ratio = len2D / len3D
+```
+
+Stored as `ElbowState.leftForearmRatio2D3D` / `rightForearmRatio2D3D`,
+visible per arm in the overlay as `r=X.XX`. **`poseWorldLandmarks` is
+used EXCLUSIVELY for this ratio — the angle math does not consult it.**
+
+Once a threshold is empirically calibrated from in-plane vs
+foreshortened poses, an angle reading whose ratio falls below the
+threshold will be suppressed (overlay shows `—` instead of a degree
+number, and the value is not pushed into min / max / ROM). This is a
+conscious handling of the 2D limit — not an attempt to correct the
+angle.
+
 ### Visibility / framing
 
 - **Hips do NOT need to be visible.**

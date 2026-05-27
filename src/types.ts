@@ -30,6 +30,13 @@ export interface ElbowState {
   rightForearmRotRaw: number | null;
   leftForearmRotSmoothed: number | null;
   rightForearmRotSmoothed: number | null;
+  // v1.22: forearm-foreshorten detection. Ratio = (2D forearm length on
+  // image plane, aspect-corrected) / (3D forearm length from
+  // poseWorldLandmarks). Used ONLY to flag when the forearm is pointing
+  // toward / away from the camera (= angle no longer reliable). The
+  // angle math itself does NOT consult worldLandmarks.
+  leftForearmRatio2D3D: number | null;
+  rightForearmRatio2D3D: number | null;
 }
 
 export interface HandTrackingState {

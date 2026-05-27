@@ -120,18 +120,21 @@ export function drawElbowOverlay(
     elbowIdx: number;
     wristIdx: number;
     smoothed: number | null;
+    ratio: number | null;
     color: string;
   }> = [
     {
       label: 'L',
       shoulderIdx: 11, elbowIdx: 13, wristIdx: 15,
       smoothed: elbow.leftSmoothed,
+      ratio: elbow.leftForearmRatio2D3D,
       color: COLORS.activeLeft,
     },
     {
       label: 'R',
       shoulderIdx: 12, elbowIdx: 14, wristIdx: 16,
       smoothed: elbow.rightSmoothed,
+      ratio: elbow.rightForearmRatio2D3D,
       color: COLORS.activeRight,
     },
   ];
@@ -171,5 +174,15 @@ export function drawElbowOverlay(
     ctx.fill();
 
     drawLabel(ctx, `${Math.round(interiorDeg)}°`, ex, ey - 18);
+
+    // v1.22 DEBUG: forearm 2D/3D length ratio. Used to detect
+    // foreshortening (arm pointing toward camera) — once threshold is
+    // calibrated this label will switch to a "—" / "ruka prema kameri"
+    // when below threshold and the angle will be suppressed. Currently
+    // just instrumented so the user can read values across poses.
+    const ratioText = side.ratio != null
+      ? `r=${side.ratio.toFixed(2)}`
+      : 'r=—';
+    drawLabel(ctx, ratioText, ex, ey + 32, 14);
   }
 }
