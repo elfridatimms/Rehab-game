@@ -69,6 +69,27 @@ number, and the value is not pushed into min / max / ROM). This is a
 conscious handling of the 2D limit — not an attempt to correct the
 angle.
 
+### Same metric in wrist and fingers modes
+
+The same forearm 2D/3D ratio is exposed per hand as
+`HandTrackingState.forearmRatio2D3D`, visible in the wrist and
+fingers overlays as `r=X.XX`. As of v1.23 fingers mode also loads
+Pose alongside Hands so worldLandmarks are available there too
+(Pose runs at `modelComplexity: 0`, minimal overhead).
+
+Caveats per mode:
+- **Wrist:** the canonical exercise pose has the forearm vertical
+  and in the image plane → ratio should sit at a stable value.
+  Drops indicate the user has tilted the forearm toward / away
+  from the camera, making the wrist deflection unreliable.
+- **Fingers:** natural exercise pose (palm to camera, forearm
+  going back to the body) keeps the forearm roughly perpendicular
+  to the camera plane → ratio is naturally low here. The metric is
+  exposed for completeness but is NOT directly usable as a
+  "suppress reading" signal in fingers mode — finger openness
+  doesn't depend on forearm orientation the way wrist deflection
+  does.
+
 ### Visibility / framing
 
 - **Hips do NOT need to be visible.**

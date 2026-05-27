@@ -4,6 +4,7 @@ import {
   WRIST_SMOOTHING_FACTOR,
   CAMERA_ASPECT_W_OVER_H,
 } from './constants';
+import { computeForearm2D3DRatio } from './elbowTracker';
 
 // ─── EMA helpers ──────────────────────────────────────────────
 // v1.19: wrist uses its own (heavier) factor — 0.7 vs the elbow's 0.3.
@@ -34,7 +35,32 @@ export function createHandState(): HandTrackingState {
     spreadIndexMiddle: null,
     spreadMiddleRing: null,
     spreadRingPinky: null,
+    forearmRatio2D3D: null,
   };
+}
+
+/** v1.23: per-hand foreshorten ratio. Same metric the elbow tracker
+ *  uses (computeForearm2D3DRatio) — just exposed on the hand state so
+ *  wrist and finger overlays can display it next to their reading.
+ *  Writes null if Pose / worldLandmarks aren't available. */
+export function updateHandForearmRatio(
+  state: HandTrackingState,
+  poseLandmarks: Landmark[] | undefined,
+  poseWorldLandmarks: Landmark[] | undefined,
+  side: 'left' | 'right',
+): void {
+  if (!poseLandmarks) {
+    state.forearmRatio2D3D = null;
+    return;
+  }
+  const elbowIdx = side === 'left' ? 13 : 14;
+  const wristIdx = side === 'left' ? 15 : 16;
+  state.forearmRatio2D3D = computeForearm2D3DRatio(
+    poseLandmarks,
+    poseWorldLandmarks,
+    elbowIdx,
+    wristIdx,
+  );
 }
 
 /** 3D wrist deviation magnitude in degrees, computed entirely from Pose

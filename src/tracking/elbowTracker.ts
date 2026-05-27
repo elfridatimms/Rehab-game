@@ -133,8 +133,12 @@ export function createElbowState(): ElbowState {
  *  toward/away from the camera the 2D projection shrinks while 3D
  *  stays the same. The angle math does NOT use the 3D landmarks; this
  *  is purely a "is the angle reliable?" instrument. Returns null if
- *  any required landmark is missing. */
-function computeForearm2D3DRatio(
+ *  any required landmark is missing.
+ *
+ *  v1.23: also reused by the wrist + finger trackers via the
+ *  HandTrackingState.forearmRatio2D3D field, so the same foreshorten
+ *  metric is available in wrist and fingers modes too. */
+export function computeForearm2D3DRatio(
   poseLandmarks: Landmark[],
   poseWorldLandmarks: Landmark[] | undefined,
   elbowIdx: number,

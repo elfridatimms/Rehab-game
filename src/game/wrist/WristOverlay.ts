@@ -146,5 +146,11 @@ export function drawWristOverlay(
     ctx.fill();
 
     drawLabel(ctx, `${Math.round(angle)}°`, wx, wy - 18);
+
+    // v1.23 DEBUG: foreshorten ratio (same metric as elbow). Small
+    // label below the wrist marker. Threshold pending calibration.
+    const ratio = hand.handState.forearmRatio2D3D;
+    const ratioText = ratio != null ? `r=${ratio.toFixed(2)}` : 'r=—';
+    drawLabel(ctx, ratioText, wx, wy + 30, 14);
   }
 }

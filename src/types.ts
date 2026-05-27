@@ -63,6 +63,13 @@ export interface HandTrackingState {
   spreadIndexMiddle: number | null;
   spreadMiddleRing: number | null;
   spreadRingPinky: number | null;
+  // v1.23: same foreshorten detector as ElbowState — ratio of the
+  // aspect-corrected 2D forearm length on the image plane to the
+  // true 3D forearm length from poseWorldLandmarks. Used to flag
+  // when the forearm (and therefore the hand frame) is pointing
+  // toward / away from the camera; the wrist / finger measurements
+  // themselves do NOT consult worldLandmarks.
+  forearmRatio2D3D: number | null;
 }
 
 export interface TrackingState {

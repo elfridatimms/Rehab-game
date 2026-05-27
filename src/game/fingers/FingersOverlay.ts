@@ -142,5 +142,14 @@ export function drawFingersOverlay(
     const cx = (wx + mx) / 2;
     const cy = (wy + my) / 2;
     drawLabel(ctx, `${Math.round(score)}%`, cx, cy);
+
+    // v1.23 DEBUG: foreshorten ratio (same metric as elbow). Note:
+    // the natural fingers-mode pose (palm to camera) tends to keep
+    // the forearm out of the image plane, so this value is expected
+    // to be low here — useful as an instrument, not necessarily as a
+    // suppress signal.
+    const ratio = hand.handState.forearmRatio2D3D;
+    const ratioText = ratio != null ? `r=${ratio.toFixed(2)}` : 'r=—';
+    drawLabel(ctx, ratioText, wx, wy + 30, 14);
   }
 }
