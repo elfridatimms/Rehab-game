@@ -106,50 +106,70 @@ export function drawElbowOverlay(
   // Always draw the raw Pose skeleton underlay.
   drawRawPoseSkeleton(ctx, pose, w, h);
 
-  // Active arm — only draw the angle layer when we have a usable angle.
-  const side = elbow.activeSide;
-  const shoulderIdx = side === 'L' ? 11 : side === 'R' ? 12 : null;
-  const elbowIdx    = side === 'L' ? 13 : side === 'R' ? 14 : null;
-  const wristIdx    = side === 'L' ? 15 : side === 'R' ? 16 : null;
-  if (shoulderIdx === null || elbowIdx === null || wristIdx === null) return;
-
-  const shoulder = pose[shoulderIdx];
-  const elbowLm  = pose[elbowIdx];
-  const wristLm  = pose[wristIdx];
-  if (!isUsable(shoulder) || !isUsable(elbowLm) || !isUsable(wristLm)) return;
-
-  const smoothedFlexion =
-    side === 'L' ? elbow.leftSmoothed : elbow.rightSmoothed;
-  if (smoothedFlexion === null) return;
-  const interiorDeg = 180 - smoothedFlexion;
-
-  const [sx, sy] = toCanvas(shoulder, w, h);
-  const [ex, ey] = toCanvas(elbowLm, w, h);
-  const [wx, wy] = toCanvas(wristLm, w, h);
-  const activeColor = side === 'L' ? COLORS.activeLeft : COLORS.activeRight;
-
   ctx.lineCap = 'round';
 
-  // Reference: elbow → shoulder (slightly brighter grey than skeleton).
-  ctx.strokeStyle = COLORS.reference;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(ex, ey);
-  ctx.lineTo(sx, sy);
-  ctx.stroke();
+  // Draw the angle layer for BOTH arms independently — whichever side
+  // passes the visibility / in-frame gate gets its own ref line,
+  // active line and degree label. The tracker already smooths and
+  // stores them separately (leftSmoothed / rightSmoothed); the
+  // `activeSide` field is only used to pick a "primary" reading for
+  // the CSV `active_side` column.
+  const sides: Array<{
+    label: 'L' | 'R';
+    shoulderIdx: number;
+    elbowIdx: number;
+    wristIdx: number;
+    smoothed: number | null;
+    color: string;
+  }> = [
+    {
+      label: 'L',
+      shoulderIdx: 11, elbowIdx: 13, wristIdx: 15,
+      smoothed: elbow.leftSmoothed,
+      color: COLORS.activeLeft,
+    },
+    {
+      label: 'R',
+      shoulderIdx: 12, elbowIdx: 14, wristIdx: 16,
+      smoothed: elbow.rightSmoothed,
+      color: COLORS.activeRight,
+    },
+  ];
 
-  // Active: elbow → wrist (thicker, side colour).
-  ctx.strokeStyle = activeColor;
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.moveTo(ex, ey);
-  ctx.lineTo(wx, wy);
-  ctx.stroke();
+  for (const side of sides) {
+    const shoulder = pose[side.shoulderIdx];
+    const elbowLm  = pose[side.elbowIdx];
+    const wristLm  = pose[side.wristIdx];
+    if (!isUsable(shoulder) || !isUsable(elbowLm) || !isUsable(wristLm)) continue;
+    if (side.smoothed === null) continue;
 
-  ctx.fillStyle = activeColor;
-  ctx.beginPath();
-  ctx.arc(ex, ey, 6, 0, Math.PI * 2);
-  ctx.fill();
+    const interiorDeg = 180 - side.smoothed;
 
-  drawLabel(ctx, `${Math.round(interiorDeg)}°`, ex, ey - 18);
+    const [sx, sy] = toCanvas(shoulder, w, h);
+    const [ex, ey] = toCanvas(elbowLm, w, h);
+    const [wx, wy] = toCanvas(wristLm, w, h);
+
+    // Reference: elbow → shoulder (slightly brighter grey than skeleton).
+    ctx.strokeStyle = COLORS.reference;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(sx, sy);
+    ctx.stroke();
+
+    // Active: elbow → wrist (thicker, side colour).
+    ctx.strokeStyle = side.color;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(wx, wy);
+    ctx.stroke();
+
+    ctx.fillStyle = side.color;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawLabel(ctx, `${Math.round(interiorDeg)}°`, ex, ey - 18);
+  }
 }
