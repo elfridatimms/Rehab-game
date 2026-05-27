@@ -9,39 +9,65 @@ import {
 // occluded landmark doesn't drop the entire arm's angle.
 const VISIBILITY_TRACK_THRESHOLD = 0.2;
 
+// v1.16: opt-in elbow diagnostics. Enable in the browser console:
+//   localStorage.setItem('debug_elbow', '1'); location.reload();
+// Disable with:
+//   localStorage.removeItem('debug_elbow'); location.reload();
+//
+// Prints one multi-line block every ~30 frames per ElbowState. Shows:
+//   - whether the canonical flexion came from 3D world landmarks or 2D
+//     image landmarks (the fallback rule is also stated)
+//   - visibility of shoulder/elbow/wrist (11–16) AND hips (23/24) so
+//     we can see whether hip occlusion correlates with bad 3D readings
+//   - raw 2D coords being fed into the angle formula
+//   - both 2D and 3D angle results, side by side
+//
+// NOTE: this is logging only — the math is unchanged.
+const DEBUG_ELBOW: boolean =
+  typeof window !== 'undefined' &&
+  typeof window.localStorage !== 'undefined' &&
+  window.localStorage.getItem('debug_elbow') === '1';
+const elbowDebugCounters: WeakMap<ElbowState, number> = new WeakMap();
+const ELBOW_DEBUG_EVERY_N_FRAMES = 30;
+
 // ─── Pure Geometry ────────────────────────────────────────────
 
-/** v1.7: clinical-convention elbow angle in 2D image plane.
- *  0° = arm fully extended (forearm continues the upper-arm line)
+/** Camera aspect ratio (width / height). useTracking constrains the
+ *  stream to 640×480 → 4/3. Used by elbowFlexionDeg2D to put x and y
+ *  components into the same pixel unit before computing the angle —
+ *  without this scaling, normalised x is "image-widths" and normalised
+ *  y is "image-heights" and the geometry of a non-square frame is
+ *  distorted (a few degrees of error). */
+const CAMERA_ASPECT_W_OVER_H = 4 / 3;
+
+/** v1.20: clinical-convention elbow angle in 2D image plane, with x
+ *  scaled by camera aspect ratio so the angle is computed in pixel
+ *  geometry rather than in distorted normalised space.
+ *
+ *    0° = arm fully extended (forearm continues the upper-arm line)
  *  180° = arm fully folded (anatomically max ~150° in healthy joint)
  *
- *  Mechanically: subtract the interior angle at the elbow from 180°.
- *  Interior angle is the angle between vectors (shoulder→elbow) and
- *  (wrist→elbow), but for the clinical convention we want the angle
- *  between (extended-arm-axis = away-from-shoulder) and (forearm). The
- *  identity:  flexion = 180° − interior
- */
+ *  Mechanically: flexion = 180° − interior, where interior is the
+ *  angle between vectors (shoulder→elbow) and (wrist→elbow).
+ *
+ *  v1.20 also DROPPED the 3D world-landmark variant entirely. The
+ *  monocular depth that backs poseWorldLandmarks is unreliable for
+ *  arm joints — empirically the 3D path produced ~30–40° errors at
+ *  full flexion (90° pose read 50°) even when hips were visible. The
+ *  2D in-plane formula matches what MediaPipe actually sees and is
+ *  the authoritative reading. */
 function elbowFlexionDeg2D(shoulder: Landmark, elbow: Landmark, wrist: Landmark): number {
-  const ab = { x: shoulder.x - elbow.x, y: shoulder.y - elbow.y };
-  const cb = { x: wrist.x - elbow.x, y: wrist.y - elbow.y };
+  const ab = {
+    x: (shoulder.x - elbow.x) * CAMERA_ASPECT_W_OVER_H,
+    y: shoulder.y - elbow.y,
+  };
+  const cb = {
+    x: (wrist.x - elbow.x) * CAMERA_ASPECT_W_OVER_H,
+    y: wrist.y - elbow.y,
+  };
   const dot = ab.x * cb.x + ab.y * cb.y;
   const magAB = Math.sqrt(ab.x ** 2 + ab.y ** 2);
   const magCB = Math.sqrt(cb.x ** 2 + cb.y ** 2);
-  if (magAB === 0 || magCB === 0) return 0;
-  const cosAngle = Math.max(-1, Math.min(1, dot / (magAB * magCB)));
-  const interior = (Math.acos(cosAngle) * 180) / Math.PI;
-  return 180 - interior;
-}
-
-/** v1.7: clinical-convention elbow angle in 3D (world landmarks). Same
- *  convention as the 2D version: 0° extended, 180° folded. Independent
- *  of camera viewpoint. */
-function elbowFlexionDeg3D(shoulder: Landmark, elbow: Landmark, wrist: Landmark): number {
-  const ab = { x: shoulder.x - elbow.x, y: shoulder.y - elbow.y, z: shoulder.z - elbow.z };
-  const cb = { x: wrist.x - elbow.x, y: wrist.y - elbow.y, z: wrist.z - elbow.z };
-  const dot = ab.x * cb.x + ab.y * cb.y + ab.z * cb.z;
-  const magAB = Math.sqrt(ab.x ** 2 + ab.y ** 2 + ab.z ** 2);
-  const magCB = Math.sqrt(cb.x ** 2 + cb.y ** 2 + cb.z ** 2);
   if (magAB === 0 || magCB === 0) return 0;
   const cosAngle = Math.max(-1, Math.min(1, dot / (magAB * magCB)));
   const interior = (Math.acos(cosAngle) * 180) / Math.PI;
@@ -167,7 +193,8 @@ export function createElbowState(): ElbowState {
 export function updateElbow(
   state: ElbowState,
   poseLandmarks: Landmark[] | undefined,
-  poseWorldLandmarks?: Landmark[],
+  // v1.20: kept for call-site compatibility but no longer consulted.
+  _poseWorldLandmarks?: Landmark[],
 ): ElbowState {
   if (!poseLandmarks || poseLandmarks.length < 17) {
     state.smoothedAngle = null;
@@ -186,38 +213,23 @@ export function updateElbow(
   const leftTrackable = armIsTrackable(leftPts);
   const rightTrackable = armIsTrackable(rightPts);
 
-  // 2D angles (clinical convention: 0° extended, 180° folded).
-  const leftAngle2D = leftTrackable
+  // v1.20: 2D image-plane only. The 3D world-landmark path was dropped
+  // because monocular depth from MediaPipe is unreliable for arm joints
+  // (empirically gave ~30–40° errors at full flexion — a clearly-bent
+  // 90° pose read 50°). 2D in-pixel-geometry is the authoritative source.
+  const leftAngle = leftTrackable
     ? elbowFlexionDeg2D(leftPts[0], leftPts[1], leftPts[2])
     : null;
-  const rightAngle2D = rightTrackable
+  const rightAngle = rightTrackable
     ? elbowFlexionDeg2D(rightPts[0], rightPts[1], rightPts[2])
     : null;
-
-  // 3D angles when world landmarks are present (same convention).
-  let leftAngle3D: number | null = null;
-  let rightAngle3D: number | null = null;
-  if (poseWorldLandmarks && poseWorldLandmarks.length >= 17) {
-    if (leftTrackable) {
-      leftAngle3D = elbowFlexionDeg3D(
-        poseWorldLandmarks[11],
-        poseWorldLandmarks[13],
-        poseWorldLandmarks[15],
-      );
-    }
-    if (rightTrackable) {
-      rightAngle3D = elbowFlexionDeg3D(
-        poseWorldLandmarks[12],
-        poseWorldLandmarks[14],
-        poseWorldLandmarks[16],
-      );
-    }
-  }
-
-  // Canonical raw = 3D when available, else 2D. This is what the CSV
-  // and downstream analysis see.
-  const leftAngle = leftAngle3D ?? leftAngle2D;
-  const rightAngle = rightAngle3D ?? rightAngle2D;
+  // Kept for the per-side smoothed-2D/3D fields that the panels used to
+  // display; both now equal `leftAngle`/`rightAngle` so analysis code
+  // depending on them keeps working.
+  const leftAngle2D = leftAngle;
+  const rightAngle2D = rightAngle;
+  const leftAngle3D = leftAngle;
+  const rightAngle3D = rightAngle;
 
   const leftVis = leftTrackable ? avgVisibility(leftPts) : 0;
   const rightVis = rightTrackable ? avgVisibility(rightPts) : 0;
@@ -290,7 +302,82 @@ export function updateElbow(
         ? state.rightSmoothed
         : null;
 
+  if (DEBUG_ELBOW) {
+    const n = (elbowDebugCounters.get(state) ?? 0) + 1;
+    if (n >= ELBOW_DEBUG_EVERY_N_FRAMES) {
+      elbowDebugCounters.set(state, 0);
+      logElbowFrame(
+        poseLandmarks,
+        _poseWorldLandmarks,
+        leftAngle2D,
+        leftAngle3D,
+        leftAngle,
+        rightAngle2D,
+        rightAngle3D,
+        rightAngle,
+        leftTrackable,
+        rightTrackable,
+      );
+    } else {
+      elbowDebugCounters.set(state, n);
+    }
+  }
+
   return state;
+}
+
+/** v1.16 diagnostics — see DEBUG_ELBOW comment above the constant. */
+function logElbowFrame(
+  poseLandmarks: Landmark[],
+  poseWorldLandmarks: Landmark[] | undefined,
+  leftAngle2D: number | null,
+  leftAngle3D: number | null,
+  leftAngle: number | null,
+  rightAngle2D: number | null,
+  rightAngle3D: number | null,
+  rightAngle: number | null,
+  leftTrackable: boolean,
+  rightTrackable: boolean,
+): void {
+  const worldOk = !!poseWorldLandmarks && poseWorldLandmarks.length >= 17;
+
+  // Canonical source the angle code USES, per arm:
+  //   3D when world landmarks present AND arm is trackable; else 2D.
+  //   `leftAngle = leftAngle3D ?? leftAngle2D` in the body above mirrors this.
+  const leftSrc =
+    leftAngle3D !== null ? '3D-world' :
+    leftAngle2D !== null ? '2D-image' : 'NONE';
+  const rightSrc =
+    rightAngle3D !== null ? '3D-world' :
+    rightAngle2D !== null ? '2D-image' : 'NONE';
+
+  const v = (idx: number): string => {
+    const lm = poseLandmarks[idx];
+    return lm && lm.visibility !== undefined
+      ? lm.visibility.toFixed(2)
+      : 'null';
+  };
+
+  const coord = (idx: number): string => {
+    const lm = poseLandmarks[idx];
+    if (!lm) return 'null';
+    return `(${lm.x.toFixed(3)}, ${lm.y.toFixed(3)})`;
+  };
+
+  const fmt = (n: number | null): string => (n === null ? '—' : n.toFixed(1));
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[elbow] worldLandmarksPresent=${worldOk}  (3D used when present AND arm trackable; else 2D)\n` +
+      `  LEFT  src=${leftSrc} flex=${fmt(leftAngle)}° (2D=${fmt(leftAngle2D)}° · 3D=${fmt(leftAngle3D)}°) trackable=${leftTrackable}\n` +
+      `        coords: shoulder11=${coord(11)} elbow13=${coord(13)} wrist15=${coord(15)}\n` +
+      `        vis:    shoulder11=${v(11)} elbow13=${v(13)} wrist15=${v(15)}\n` +
+      `  RIGHT src=${rightSrc} flex=${fmt(rightAngle)}° (2D=${fmt(rightAngle2D)}° · 3D=${fmt(rightAngle3D)}°) trackable=${rightTrackable}\n` +
+      `        coords: shoulder12=${coord(12)} elbow14=${coord(14)} wrist16=${coord(16)}\n` +
+      `        vis:    shoulder12=${v(12)} elbow14=${v(14)} wrist16=${v(16)}\n` +
+      `  HIPS vis: L23=${v(23)} R24=${v(24)}  (Pose world landmarks are centered on the hip midpoint — low hip vis ⇒ 3D origin drifts)\n` +
+      `  FALLBACK: 3D path runs iff poseWorldLandmarks.length>=17 AND armIsTrackable(); else this arm falls back to 2D. No mid-trial fallback toggle beyond that.`,
+  );
 }
 
 /** v1.6: continuous forearm-rotation measurement. Uses MediaPipe Pose's
