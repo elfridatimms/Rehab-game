@@ -11,10 +11,11 @@ import type { EnrichedFrameRow, FrameRow, FrameStatus, SideKey } from './types';
 /** Anatomically plausible range per mode (inclusive). */
 export const PLAUSIBLE_RANGE: Record<GameMode, { min: number; max: number }> = {
   elbow: { min: 0, max: 180 },
-  // v1.18: wrist is the deploy formula atan2(i, |n|) — signed range
-  // −90…+90 (deflection from a fixed horizontal reference). Margin
-  // to ±100 absorbs occasional out-of-bounds reads at the singularity.
-  wrist: { min: -100, max: 100 },
+  // v1.20: wrist now reports CLINICAL DEFLECTION from the neutral
+  // (vertical-upright) hand position. 0 = neutral, 90 = full bend to
+  // horizontal, >90 = hyperextension past horizontal (rare). Allow
+  // a generous margin in both directions for noise / hyperextension.
+  wrist: { min: -10, max: 180 },
   fingers: { min: 0, max: 100 },
 };
 
@@ -270,17 +271,14 @@ export interface SideRawPeaks {
 }
 
 /**
- * "Peak" of the raw signal.
- *   elbow / fingers: unsigned, peak = max(raw).
- *   wrist: signed deflection from horizontal (range −90…+90). Peak =
- *          frame with the largest |raw| — i.e. furthest from horizontal.
- *          The reported value is the signed reading at that frame so
- *          "hand-up" vs "hand-down" can be told apart post-hoc.
+ * "Peak" of the raw signal. All three modes are now unsigned: the raw
+ * value itself IS the amount of deflection (elbow flexion, wrist bend
+ * from neutral, finger openness). Peak = the max raw across the trial.
  *
  * Single pass computes both `peakAll` and `peakClean` simultaneously.
  */
 export function computeRawPeak(
-  mode: GameMode,
+  _mode: GameMode,
   enriched: readonly EnrichedFrameRow[],
   side: SideKey
 ): SideRawPeaks {
@@ -289,13 +287,11 @@ export function computeRawPeak(
   let peakClean: number | null = null;
   let peakCleanRef = -Infinity;
 
-  const signedMag = mode === 'wrist';
-
   for (const f of enriched) {
     const raw = side === 'left' ? f.left_raw : f.right_raw;
     if (raw === null || !Number.isFinite(raw)) continue;
     const flag = side === 'left' ? f.left_anomaly_flag : f.right_anomaly_flag;
-    const cmp = signedMag ? Math.abs(raw) : raw;
+    const cmp = raw;
 
     if (cmp > peakAllRef) {
       peakAllRef = cmp;

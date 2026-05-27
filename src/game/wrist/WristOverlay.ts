@@ -145,10 +145,11 @@ function drawJointInspection(
   );
 }
 
-/** Recompute the wrist formula on the current frame so we can see what
- *  the tracker SHOULD be reading right now (vs the smoothed displayed
- *  value). Same convention as the tracker: atan2(i, |n|) where
- *  n = mcp.x − wrist.x, i = wrist.y − mcp.y (screen-y inverted). */
+/** Recompute the wrist formula on the current frame. Same convention
+ *  as the tracker: angle = 90 − atan2(i, |n|) where n = mcp.x − wrist.x,
+ *  i = wrist.y − mcp.y (screen-y inverted). Reads 0 at upright neutral,
+ *  ~90 at horizontal bend. Also returns the underlying atan2 so we can
+ *  see both halves of the math. */
 function computeWristDebug(
   wrist: Landmark,
   mcp: Landmark,
@@ -157,27 +158,33 @@ function computeWristDebug(
 ): {
   n_norm: number;
   i_norm: number;
+  fromHoriz_norm: number;
   kut_norm: number;
   n_px: number;
   i_px: number;
+  fromHoriz_px: number;
   kut_px: number;
   hand_dx_px: number;
   hand_dy_px: number;
 } {
   const n_norm = mcp.x - wrist.x;
   const i_norm = wrist.y - mcp.y;
-  const kut_norm = (Math.atan2(i_norm, Math.abs(n_norm)) * 180) / Math.PI;
+  const fromHoriz_norm = (Math.atan2(i_norm, Math.abs(n_norm)) * 180) / Math.PI;
+  const kut_norm = 90 - fromHoriz_norm;
 
   const n_px = n_norm * w;
   const i_px = i_norm * h;
-  const kut_px = (Math.atan2(i_px, Math.abs(n_px)) * 180) / Math.PI;
+  const fromHoriz_px = (Math.atan2(i_px, Math.abs(n_px)) * 180) / Math.PI;
+  const kut_px = 90 - fromHoriz_px;
 
   return {
     n_norm,
     i_norm,
+    fromHoriz_norm,
     kut_norm,
     n_px,
     i_px,
+    fromHoriz_px,
     kut_px,
     hand_dx_px: (mcp.x - wrist.x) * w,
     hand_dy_px: (mcp.y - wrist.y) * h,
@@ -225,12 +232,13 @@ export function drawWristOverlay(
     const handLen = Math.hypot(mx - wx, my - wy);
     const refHalf = Math.max(40, handLen);
 
-    // ── 2) Reference (horizontal grey through wrist) + active line wrist→MCP
+    // ── 2) Reference (VERTICAL grey through wrist = neutral / 0° axis)
+    //       + active line wrist→MCP
     ctx.strokeStyle = COLORS.reference;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(wx - refHalf, wy);
-    ctx.lineTo(wx + refHalf, wy);
+    ctx.moveTo(wx, wy - refHalf);
+    ctx.lineTo(wx, wy + refHalf);
     ctx.stroke();
 
     ctx.strokeStyle = hand.activeColor;
@@ -248,16 +256,18 @@ export function drawWristOverlay(
     drawJointInspection(ctx, wrist, 0, `${hand.label} wrist`, w, h, COLORS.jointHi);
     drawJointInspection(ctx, mcp, 9, `${hand.label} mcp9`, w, h, COLORS.jointHi);
 
-    // Debug callout near the wrist with the live calc
+    // Debug callout near the wrist with the live calc.
+    // Convention: 0 = neutral upright, 90 ≈ horizontal bend.
     const dbg = computeWristDebug(wrist, mcp, w, h);
     const displayed = hand.handState.smoothedWristExtensionDeg;
     const lines = [
-      `── ${hand.label} wrist calc ──`,
+      `── ${hand.label} wrist calc (0=upright, 90=horizontal) ──`,
       `n_norm  = ${dbg.n_norm.toFixed(4)}   i_norm = ${dbg.i_norm.toFixed(4)}`,
       `n_px    = ${dbg.n_px.toFixed(1)}    i_px   = ${dbg.i_px.toFixed(1)}`,
       `hand vec (px) dx=${dbg.hand_dx_px.toFixed(1)} dy=${dbg.hand_dy_px.toFixed(1)}`,
-      `kut_raw(norm) = ${dbg.kut_norm.toFixed(1)}°`,
-      `kut_raw(px)   = ${dbg.kut_px.toFixed(1)}°`,
+      `fromHoriz(px) = ${dbg.fromHoriz_px.toFixed(1)}°   (intermediate)`,
+      `kut_raw(norm) = ${dbg.kut_norm.toFixed(1)}°   = 90 − fromHoriz(norm)`,
+      `kut_raw(px)   = ${dbg.kut_px.toFixed(1)}°   = 90 − fromHoriz(px)`,
       `displayed     = ${displayed != null ? displayed.toFixed(1) + '°' : '—'}`,
     ];
     drawTextLines(ctx, lines, wx + 16, wy + 12, 11);

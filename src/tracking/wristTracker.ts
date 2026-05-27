@@ -89,29 +89,29 @@ export function updateWrist3D(
 }
 
 /**
- * Wrist angle — restored deploy formula. See docs/SPEC.md "Wrist angle".
+ * Wrist angle — clinical convention. See docs/SPEC.md "Wrist angle".
  *
- * Reference is a FIXED HORIZONTAL line through the wrist landmark.
- * The angle is the deviation of the hand vector (lm0 → lm9) from that
- * horizontal — NOT from vertical, NOT from the forearm direction.
+ *   0   = neutral (hand in line with the vertical forearm — upright)
+ *   90  = hand bent to horizontal (90° of flex/ext deflection)
+ *  >90  = hyperextension past horizontal (rare)
  *
- *   n = mcp.x   − wrist.x          // horizontal component (signed)
+ * Implementation: take the hand vector from lm0 → lm9, measure its
+ * angle of deflection from the VERTICAL reference (= where a neutral
+ * hand sits on a vertical forearm). This is mathematically the
+ * complement of "angle from horizontal":
+ *
+ *   n = mcp.x   − wrist.x          // horizontal component
  *   i = wrist.y − mcp.y            // vertical component (screen-y inverted)
- *   angle_deg = atan2(i, |n|) * 180 / π
+ *   from_horizontal = atan2(i, |n|) * 180 / π    // range −90…+90, 90 at upright
+ *   angle_deg       = 90 − from_horizontal       // 0 at upright, 90 at horizontal
  *
- * Range: −90° … +90°.
- *   +90 = hand straight up    (extended hand on a vertical forearm)
- *    0  = hand horizontal     (90° flex/ext from a vertical-forearm neutral)
- *   −90 = hand straight down  (hyperextension past horizontal)
+ * abs(n) collapses left-vs-right and the canvas mirror into the same
+ * case, so the formula behaves identically for both hands. No per-hand
+ * sign flip.
  *
- * Taking the absolute value of the horizontal component collapses
- * left-vs-right and the canvas mirror into the same case, so the
- * formula behaves identically for both hands. Do NOT add a per-hand
- * sign flip on top — abs() already handles it.
- *
- * The forearm is NOT tracked. The "neutral=90" interpretation holds
- * only while the forearm is vertical and in the plane of the camera
- * (limitation documented in SPEC).
+ * The forearm is NOT tracked by the Hands model. The "neutral=0"
+ * interpretation holds only while the forearm is vertical and in the
+ * plane of the camera (limitation documented in SPEC).
  */
 export function updateWristExtension(
   state: HandTrackingState,
@@ -129,7 +129,8 @@ export function updateWristExtension(
 
   const n = middleMCP.x - wrist.x;
   const i = wrist.y - middleMCP.y;
-  const angleDeg = (Math.atan2(i, Math.abs(n)) * 180) / Math.PI;
+  const fromHorizontal = (Math.atan2(i, Math.abs(n)) * 180) / Math.PI;
+  const angleDeg = 90 - fromHorizontal;
 
   state.rawWristExtensionDeg = angleDeg;
   state.visibility = 1;
