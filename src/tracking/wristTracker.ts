@@ -1,8 +1,16 @@
 import type { Landmark, HandTrackingState } from '../types';
-import { SMOOTHING_FACTOR } from './constants';
+import { SMOOTHING_FACTOR, WRIST_SMOOTHING_FACTOR } from './constants';
 
-// ─── EMA helper ───────────────────────────────────────────────
+// ─── EMA helpers ──────────────────────────────────────────────
+// v1.19: wrist uses its own (heavier) factor — 0.7 vs the elbow's 0.3.
+// The 3D-deviation path (`updateWrist3D`, prayer-stretch only) keeps the
+// global SMOOTHING_FACTOR because its data path is separate and the
+// trade-offs there are different.
 function ema(raw: number, prev: number | null): number {
+  if (prev === null) return raw;
+  return raw * WRIST_SMOOTHING_FACTOR + prev * (1 - WRIST_SMOOTHING_FACTOR);
+}
+function ema3D(raw: number, prev: number | null): number {
   if (prev === null) return raw;
   return raw * SMOOTHING_FACTOR + prev * (1 - SMOOTHING_FACTOR);
 }
@@ -75,7 +83,7 @@ export function updateWrist3D(
   const raw = computeWrist3DDeg(poseWorldLandmarks, side);
   state.rawWrist3DDeg = raw;
   if (raw !== null && Number.isFinite(raw)) {
-    state.smoothedWrist3DDeg = ema(raw, state.smoothedWrist3DDeg);
+    state.smoothedWrist3DDeg = ema3D(raw, state.smoothedWrist3DDeg);
   }
   return state;
 }

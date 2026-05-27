@@ -1,8 +1,16 @@
 // ─── Tunable Tracking Constants ───────────────────────────────
 // These match the architecture reference exactly.
 
-/** EMA smoothing blend factor (0–1). Higher = more responsive, more jittery. */
+/** EMA smoothing blend factor (0–1). Higher = more responsive, more jittery.
+ *  Used by elbowTracker (`updateElbow`, `updateForearmRotation`). */
 export const SMOOTHING_FACTOR = 0.3;
+
+/** v1.19: wrist-specific EMA factor. Bumped from the global 0.3 to 0.7
+ *  to cut the perceived latency in the wrist mode overlay; the trade-off
+ *  is slightly more jitter in the readout, which is acceptable for the
+ *  flexion/extension exercise where rapid response matters more than
+ *  rock-steady stillness at neutral. */
+export const WRIST_SMOOTHING_FACTOR = 0.7;
 
 /** Minimum landmark visibility to consider valid (used by post-hoc
  *  anomaly classification — frames below this become `low_visibility`). */
