@@ -1,19 +1,27 @@
 import type { HolisticResults, TrackingState, Landmark } from '../../types';
 
-// Minimal wrist overlay — just the deflection from neutral.
-//
-// Vertical reference line through the wrist (= 0° axis where a
-// neutral upright hand sits) + colored line wrist → MCP (= hand
-// vector that feeds the angle formula) + prominent number near
-// the wrist. Per-hand.
+// Wrist overlay — raw MediaPipe Hands skeleton as a grey underlay,
+// then the vertical 0° reference + active wrist→MCP line + prominent
+// angle label per hand. No fallback message: if no value, the
+// skeleton stays and the angle layer is just skipped.
 
 const COLORS = {
-  reference: 'rgba(180, 180, 180, 0.75)',
+  skeleton: 'rgba(180, 180, 180, 0.45)',
+  reference: 'rgba(180, 180, 180, 0.85)',
   activeLeft: '#22d3ee',
   activeRight: '#f472b6',
   text: '#ffffff',
   textBg: 'rgba(0, 0, 0, 0.65)',
 };
+
+const HAND_EDGES: ReadonlyArray<readonly [number, number]> = [
+  [0, 1], [1, 2], [2, 3], [3, 4],         // thumb
+  [0, 5], [5, 6], [6, 7], [7, 8],         // index
+  [0, 9], [9, 10], [10, 11], [11, 12],    // middle
+  [0, 13], [13, 14], [14, 15], [15, 16],  // ring
+  [0, 17], [17, 18], [18, 19], [19, 20],  // pinky
+  [5, 9], [9, 13], [13, 17],              // palm crossbars
+];
 
 function mirror(x: number): number {
   return 1 - x;
@@ -45,6 +53,35 @@ function drawLabel(
   ctx.fillText(text, x, y - padY - 1);
 }
 
+function drawRawHandSkeleton(
+  ctx: CanvasRenderingContext2D,
+  hand: Landmark[],
+  w: number,
+  h: number,
+): void {
+  ctx.save();
+  ctx.strokeStyle = COLORS.skeleton;
+  ctx.fillStyle = COLORS.skeleton;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (const [a, b] of HAND_EDGES) {
+    if (!hand[a] || !hand[b]) continue;
+    const [ax, ay] = toCanvas(hand[a], w, h);
+    const [bx, by] = toCanvas(hand[b], w, h);
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
+  for (let i = 0; i < Math.min(hand.length, 21); i++) {
+    if (!hand[i]) continue;
+    const [x, y] = toCanvas(hand[i], w, h);
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 export function drawWristOverlay(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -71,6 +108,10 @@ export function drawWristOverlay(
 
   for (const hand of hands) {
     if (!hand.landmarks || hand.landmarks.length < 10) continue;
+
+    // Always draw the raw hand skeleton underlay.
+    drawRawHandSkeleton(ctx, hand.landmarks, w, h);
+
     const angle = hand.handState.smoothedWristExtensionDeg;
     if (angle == null) continue;
 
@@ -83,7 +124,7 @@ export function drawWristOverlay(
     const handLen = Math.hypot(mx - wx, my - wy);
     const refHalf = Math.max(40, handLen);
 
-    // Reference: VERTICAL grey line through wrist (= 0° / neutral).
+    // VERTICAL reference through wrist = 0° / neutral axis.
     ctx.strokeStyle = COLORS.reference;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -91,7 +132,7 @@ export function drawWristOverlay(
     ctx.lineTo(wx, wy + refHalf);
     ctx.stroke();
 
-    // Active: thicker colored line wrist → MCP (the hand vector).
+    // Active wrist→MCP (the hand vector that feeds the angle formula).
     ctx.strokeStyle = hand.activeColor;
     ctx.lineWidth = 5;
     ctx.beginPath();
@@ -104,7 +145,6 @@ export function drawWristOverlay(
     ctx.arc(wx, wy, 6, 0, Math.PI * 2);
     ctx.fill();
 
-    // Big numeric label near the wrist.
     drawLabel(ctx, `${Math.round(angle)}°`, wx, wy - 18);
   }
 }

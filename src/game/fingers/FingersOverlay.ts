@@ -1,18 +1,26 @@
 import type { HolisticResults, TrackingState, Landmark } from '../../types';
 
-// Minimal fingers overlay — just the openness % per hand.
-//
-// One palm-reference line (wrist → middle MCP, grey) so the user can
-// see the tracked hand, and a prominent % number at the palm centre.
-// No fingertip lines, no debug callouts.
+// Fingers overlay — raw MediaPipe Hands skeleton as a grey underlay,
+// plus a prominent openness % at the palm centre per hand. If no
+// score is available we just leave the skeleton showing.
 
 const COLORS = {
-  reference: 'rgba(180, 180, 180, 0.75)',
+  skeleton: 'rgba(180, 180, 180, 0.45)',
+  palmRef: 'rgba(180, 180, 180, 0.85)',
   activeLeft: '#22d3ee',
   activeRight: '#f472b6',
   text: '#ffffff',
   textBg: 'rgba(0, 0, 0, 0.65)',
 };
+
+const HAND_EDGES: ReadonlyArray<readonly [number, number]> = [
+  [0, 1], [1, 2], [2, 3], [3, 4],         // thumb
+  [0, 5], [5, 6], [6, 7], [7, 8],         // index
+  [0, 9], [9, 10], [10, 11], [11, 12],    // middle
+  [0, 13], [13, 14], [14, 15], [15, 16],  // ring
+  [0, 17], [17, 18], [18, 19], [19, 20],  // pinky
+  [5, 9], [9, 13], [13, 17],              // palm crossbars
+];
 
 function mirror(x: number): number {
   return 1 - x;
@@ -44,6 +52,35 @@ function drawLabel(
   ctx.fillText(text, x, y);
 }
 
+function drawRawHandSkeleton(
+  ctx: CanvasRenderingContext2D,
+  hand: Landmark[],
+  w: number,
+  h: number,
+): void {
+  ctx.save();
+  ctx.strokeStyle = COLORS.skeleton;
+  ctx.fillStyle = COLORS.skeleton;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (const [a, b] of HAND_EDGES) {
+    if (!hand[a] || !hand[b]) continue;
+    const [ax, ay] = toCanvas(hand[a], w, h);
+    const [bx, by] = toCanvas(hand[b], w, h);
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
+  for (let i = 0; i < Math.min(hand.length, 21); i++) {
+    if (!hand[i]) continue;
+    const [x, y] = toCanvas(hand[i], w, h);
+    ctx.beginPath();
+    ctx.arc(x, y, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 export function drawFingersOverlay(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
@@ -70,6 +107,10 @@ export function drawFingersOverlay(
 
   for (const hand of hands) {
     if (!hand.landmarks || hand.landmarks.length < 21) continue;
+
+    // Always draw the raw hand skeleton underlay.
+    drawRawHandSkeleton(ctx, hand.landmarks, w, h);
+
     const score = hand.handState.smoothedOpenHandScore;
     if (score == null) continue;
 
@@ -80,15 +121,16 @@ export function drawFingersOverlay(
     const [wx, wy] = toCanvas(wrist, w, h);
     const [mx, my] = toCanvas(mcp, w, h);
 
-    // Palm reference (wrist → middle MCP, grey thin).
-    ctx.strokeStyle = COLORS.reference;
+    // Palm reference (wrist → middle MCP, slightly brighter grey).
+    ctx.strokeStyle = COLORS.palmRef;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(wx, wy);
     ctx.lineTo(mx, my);
     ctx.stroke();
 
-    // Wrist + MCP dots.
+    // Wrist + MCP markers in the side colour so the user sees which
+    // hand the % belongs to.
     ctx.fillStyle = hand.activeColor;
     ctx.beginPath();
     ctx.arc(wx, wy, 6, 0, Math.PI * 2);
@@ -97,7 +139,6 @@ export function drawFingersOverlay(
     ctx.arc(mx, my, 4, 0, Math.PI * 2);
     ctx.fill();
 
-    // Prominent % at the palm centre.
     const cx = (wx + mx) / 2;
     const cy = (wy + my) / 2;
     drawLabel(ctx, `${Math.round(score)}%`, cx, cy);
