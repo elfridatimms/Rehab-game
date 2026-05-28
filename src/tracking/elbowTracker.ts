@@ -123,45 +123,7 @@ export function createElbowState(): ElbowState {
     rightForearmRotRaw: null,
     leftForearmRotSmoothed: null,
     rightForearmRotSmoothed: null,
-    leftForearmRatio2D3D: null,
-    rightForearmRatio2D3D: null,
   };
-}
-
-/** v1.22: ratio = aspect-corrected 2D forearm length / 3D forearm
- *  length. Used to detect foreshortening — when the forearm points
- *  toward/away from the camera the 2D projection shrinks while 3D
- *  stays the same. The angle math does NOT use the 3D landmarks; this
- *  is purely a "is the angle reliable?" instrument. Returns null if
- *  any required landmark is missing.
- *
- *  v1.23: also reused by the wrist + finger trackers via the
- *  HandTrackingState.forearmRatio2D3D field, so the same foreshorten
- *  metric is available in wrist and fingers modes too. */
-export function computeForearm2D3DRatio(
-  poseLandmarks: Landmark[],
-  poseWorldLandmarks: Landmark[] | undefined,
-  elbowIdx: number,
-  wristIdx: number,
-): number | null {
-  if (!poseWorldLandmarks || poseWorldLandmarks.length <= wristIdx) return null;
-  const elbow2D = poseLandmarks[elbowIdx];
-  const wrist2D = poseLandmarks[wristIdx];
-  const elbow3D = poseWorldLandmarks[elbowIdx];
-  const wrist3D = poseWorldLandmarks[wristIdx];
-  if (!elbow2D || !wrist2D || !elbow3D || !wrist3D) return null;
-
-  const dx = (wrist2D.x - elbow2D.x) * CAMERA_ASPECT_W_OVER_H;
-  const dy = wrist2D.y - elbow2D.y;
-  const len2D = Math.hypot(dx, dy);
-
-  const len3D = Math.hypot(
-    wrist3D.x - elbow3D.x,
-    wrist3D.y - elbow3D.y,
-    wrist3D.z - elbow3D.z,
-  );
-  if (len3D === 0) return null;
-  return len2D / len3D;
 }
 
 /**
@@ -224,10 +186,10 @@ export function computeForearm2D3DRatio(
 export function updateElbow(
   state: ElbowState,
   poseLandmarks: Landmark[] | undefined,
-  // v1.22: worldLandmarks are NOT used for the angle (would corrupt it
-  // — see v1.20 note). They are used ONLY for the 2D/3D forearm-length
-  // ratio that detects foreshortening, see computeForearm2D3DRatio.
-  poseWorldLandmarks?: Landmark[],
+  // v1.20: worldLandmarks NOT used for the angle (monocular depth is
+  // unreliable for arm joints — see formula doc above). Kept on the
+  // signature for call-site compatibility only.
+  _poseWorldLandmarks?: Landmark[],
 ): ElbowState {
   if (!poseLandmarks || poseLandmarks.length < 17) {
     state.smoothedAngle = null;
@@ -236,20 +198,8 @@ export function updateElbow(
     state.rightRaw = null;
     state.leftVisibility = null;
     state.rightVisibility = null;
-    state.leftForearmRatio2D3D = null;
-    state.rightForearmRatio2D3D = null;
     return state;
   }
-
-  // v1.22: forearm 2D/3D length ratio per side — foreshorten detector.
-  // Computed unconditionally (independent of trackable gate) so the UI
-  // can show it even when the arm isn't trackable.
-  state.leftForearmRatio2D3D = computeForearm2D3DRatio(
-    poseLandmarks, poseWorldLandmarks, 13, 15,
-  );
-  state.rightForearmRatio2D3D = computeForearm2D3DRatio(
-    poseLandmarks, poseWorldLandmarks, 14, 16,
-  );
 
   // Image-plane (2D) landmarks for visibility + 2D angle.
   const leftPts = [poseLandmarks[11], poseLandmarks[13], poseLandmarks[15]];
@@ -353,7 +303,7 @@ export function updateElbow(
       elbowDebugCounters.set(state, 0);
       logElbowFrame(
         poseLandmarks,
-        poseWorldLandmarks,
+        _poseWorldLandmarks,
         leftAngle2D,
         leftAngle3D,
         leftAngle,

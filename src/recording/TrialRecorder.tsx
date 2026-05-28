@@ -347,19 +347,19 @@ const PostTrialSummary: React.FC<{
         <div>
           <dt>Min</dt>
           <dd>
-            {fmt(summary.left_filt_min, unit)} / {fmt(summary.right_filt_min, unit)}
+            {fmt(summary.left_angle_min, unit)} / {fmt(summary.right_angle_min, unit)}
           </dd>
         </div>
         <div>
           <dt>Max</dt>
           <dd>
-            {fmt(summary.left_filt_max, unit)} / {fmt(summary.right_filt_max, unit)}
+            {fmt(summary.left_angle_max, unit)} / {fmt(summary.right_angle_max, unit)}
           </dd>
         </div>
         <div>
           <dt>ROM</dt>
           <dd>
-            {fmt(summary.left_filt_rom, unit)} / {fmt(summary.right_filt_rom, unit)}
+            {fmt(summary.left_rom, unit)} / {fmt(summary.right_rom, unit)}
           </dd>
         </div>
         <div>
@@ -421,9 +421,9 @@ const ResultSide: React.FC<{
       | 'raw_rom'
       | 'raw_peak'
       | 'raw_peak_clean'
-      | 'filt_min'
-      | 'filt_max'
-      | 'filt_rom'
+      | 'angle_min'
+      | 'angle_max'
+      | 'rom'
       | 'filt_std'
       | 'low_visibility_pct'
   ): number | null => {
@@ -435,12 +435,12 @@ const ResultSide: React.FC<{
     <div className="recorder-result-side">
       <div className="recorder-result-side-title">{label}</div>
       <dl>
-        <dt>filt min</dt>
-        <dd>{fmt(pick('filt_min'), unit)}</dd>
-        <dt>filt max</dt>
-        <dd>{fmt(pick('filt_max'), unit)}</dd>
-        <dt>filt ROM</dt>
-        <dd>{fmt(pick('filt_rom'), unit)}</dd>
+        <dt>angle min</dt>
+        <dd>{fmt(pick('angle_min'), unit)}</dd>
+        <dt>angle max</dt>
+        <dd>{fmt(pick('angle_max'), unit)}</dd>
+        <dt>ROM</dt>
+        <dd>{fmt(pick('rom'), unit)}</dd>
         <dt>filt std</dt>
         <dd>{fmt(pick('filt_std'), unit, 2)}</dd>
         <dt>raw peak</dt>

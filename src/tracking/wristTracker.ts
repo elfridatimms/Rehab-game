@@ -4,7 +4,6 @@ import {
   WRIST_SMOOTHING_FACTOR,
   CAMERA_ASPECT_W_OVER_H,
 } from './constants';
-import { computeForearm2D3DRatio } from './elbowTracker';
 
 // ─── EMA helpers ──────────────────────────────────────────────
 // v1.19: wrist uses its own (heavier) factor — 0.7 vs the elbow's 0.3.
@@ -35,32 +34,7 @@ export function createHandState(): HandTrackingState {
     spreadIndexMiddle: null,
     spreadMiddleRing: null,
     spreadRingPinky: null,
-    forearmRatio2D3D: null,
   };
-}
-
-/** v1.23: per-hand foreshorten ratio. Same metric the elbow tracker
- *  uses (computeForearm2D3DRatio) — just exposed on the hand state so
- *  wrist and finger overlays can display it next to their reading.
- *  Writes null if Pose / worldLandmarks aren't available. */
-export function updateHandForearmRatio(
-  state: HandTrackingState,
-  poseLandmarks: Landmark[] | undefined,
-  poseWorldLandmarks: Landmark[] | undefined,
-  side: 'left' | 'right',
-): void {
-  if (!poseLandmarks) {
-    state.forearmRatio2D3D = null;
-    return;
-  }
-  const elbowIdx = side === 'left' ? 13 : 14;
-  const wristIdx = side === 'left' ? 15 : 16;
-  state.forearmRatio2D3D = computeForearm2D3DRatio(
-    poseLandmarks,
-    poseWorldLandmarks,
-    elbowIdx,
-    wristIdx,
-  );
 }
 
 /** 3D wrist deviation magnitude in degrees, computed entirely from Pose
@@ -119,29 +93,24 @@ export function updateWrist3D(
 }
 
 /**
- * Wrist angle — clinical convention. See docs/SPEC.md "Wrist angle".
+ * Wrist angle — deploy formula, signed (sideways flex/ext convention).
  *
- *   0   = neutral (hand in line with the vertical forearm — upright)
- *   90  = hand bent to horizontal (90° of flex/ext deflection)
- *  >90  = hyperextension past horizontal (rare)
- *
- * Implementation: take the hand vector from lm0 → lm9, measure its
- * angle of deflection from the VERTICAL reference (= where a neutral
- * hand sits on a vertical forearm). This is mathematically the
- * complement of "angle from horizontal":
+ * Assumes the forearm is HORIZONTAL across the image plane (the user
+ * is doing the exercise to the side: arm extended, palm down or up,
+ * bending the hand up = extension and down = flexion).
  *
  *   n = mcp.x   − wrist.x          // horizontal component
  *   i = wrist.y − mcp.y            // vertical component (screen-y inverted)
- *   from_horizontal = atan2(i, |n|) * 180 / π    // range −90…+90, 90 at upright
- *   angle_deg       = 90 − from_horizontal       // 0 at upright, 90 at horizontal
+ *   angle_deg = atan2(i, |n|) * 180 / π
  *
- * abs(n) collapses left-vs-right and the canvas mirror into the same
- * case, so the formula behaves identically for both hands. No per-hand
- * sign flip.
+ *   0   = neutral (hand in line with the horizontal forearm)
+ *  >0   = hand bent UP   (extension when palm down)
+ *  <0   = hand bent DOWN (flexion when palm down)
+ *  range −90…+90
  *
- * The forearm is NOT tracked by the Hands model. The "neutral=0"
- * interpretation holds only while the forearm is vertical and in the
- * plane of the camera (limitation documented in SPEC).
+ * abs(n) collapses left-vs-right and the canvas mirror — no per-hand
+ * sign flip needed. The forearm itself isn't tracked; the "horizontal
+ * forearm" assumption is the user's responsibility (camera setup).
  */
 export function updateWristExtension(
   state: HandTrackingState,
@@ -157,13 +126,12 @@ export function updateWristExtension(
   const wrist = handLandmarks[0];
   const middleMCP = handLandmarks[9];
 
-  // v1.21: x scaled by camera aspect (4/3) so x and y are in the same
-  // pixel unit. Without this the angle is computed in distorted
-  // normalised space.
+  // x scaled by camera aspect (4/3) so x and y are in the same pixel
+  // unit. Without this the angle is computed in distorted normalised
+  // space.
   const n = (middleMCP.x - wrist.x) * CAMERA_ASPECT_W_OVER_H;
   const i = wrist.y - middleMCP.y;
-  const fromHorizontal = (Math.atan2(i, Math.abs(n)) * 180) / Math.PI;
-  const angleDeg = 90 - fromHorizontal;
+  const angleDeg = (Math.atan2(i, Math.abs(n)) * 180) / Math.PI;
 
   state.rawWristExtensionDeg = angleDeg;
   state.visibility = 1;

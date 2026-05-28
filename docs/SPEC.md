@@ -44,51 +44,8 @@ normalised coordinates with non-square canvases distorts the angle.
 
 The angle is correct as long as the arm is parallel to the camera plane.
 Motion towards or away from the camera projects onto the image plane and
-underestimates the true 3D angle.
-
-### Foreshorten detection (DEBUG PASS — threshold to be calibrated)
-
-When the forearm points toward or away from the camera, the 2D
-projection of the forearm shrinks while its true 3D length is
-unchanged. We detect this condition with a length ratio:
-
-```
-len2D = | wrist2D − elbow2D |       // image plane, x scaled by aspect
-len3D = | wrist3D − elbow3D |       // Pose worldLandmarks (METERS)
-ratio = len2D / len3D
-```
-
-Stored as `ElbowState.leftForearmRatio2D3D` / `rightForearmRatio2D3D`,
-visible per arm in the overlay as `r=X.XX`. **`poseWorldLandmarks` is
-used EXCLUSIVELY for this ratio — the angle math does not consult it.**
-
-Once a threshold is empirically calibrated from in-plane vs
-foreshortened poses, an angle reading whose ratio falls below the
-threshold will be suppressed (overlay shows `—` instead of a degree
-number, and the value is not pushed into min / max / ROM). This is a
-conscious handling of the 2D limit — not an attempt to correct the
-angle.
-
-### Same metric in wrist and fingers modes
-
-The same forearm 2D/3D ratio is exposed per hand as
-`HandTrackingState.forearmRatio2D3D`, visible in the wrist and
-fingers overlays as `r=X.XX`. As of v1.23 fingers mode also loads
-Pose alongside Hands so worldLandmarks are available there too
-(Pose runs at `modelComplexity: 0`, minimal overhead).
-
-Caveats per mode:
-- **Wrist:** the canonical exercise pose has the forearm vertical
-  and in the image plane → ratio should sit at a stable value.
-  Drops indicate the user has tilted the forearm toward / away
-  from the camera, making the wrist deflection unreliable.
-- **Fingers:** natural exercise pose (palm to camera, forearm
-  going back to the body) keeps the forearm roughly perpendicular
-  to the camera plane → ratio is naturally low here. The metric is
-  exposed for completeness but is NOT directly usable as a
-  "suppress reading" signal in fingers mode — finger openness
-  doesn't depend on forearm orientation the way wrist deflection
-  does.
+underestimates the true 3D angle. The trackers and overlays do NOT
+attempt to correct or flag this — the user keeps the limb in plane.
 
 ### Visibility / framing
 
@@ -142,32 +99,26 @@ and right.
 
 ### Reference
 
-`0°` is the **vertical neutral direction** through the wrist landmark
-(lm0) — where a hand in line with a vertical forearm sits. The angle
-is the deflection of the hand vector AWAY from that neutral, regardless
-of which side the bend is on.
+`0°` is the **horizontal axis** through the wrist landmark — where a
+hand in line with a horizontal forearm sits. The angle is the signed
+deflection of the hand vector (lm0 → lm9) up (extension) or down
+(flexion) from that horizontal.
 
-The wrist exercise assumes the **forearm is held vertical and in the
-plane of the camera** (no lean toward/away). In that pose:
+The wrist exercise assumes the **forearm is held horizontal across
+the image plane** (sideways pose). In that pose:
 
-- Hand in line with forearm (upright) → **0°** (neutral)
-- Wrist bent sideways → number rises above 0
-- Hand reaches horizontal (full ~90° flex/ext) → **~90°**
-- Hand past horizontal (rare hyperextension) → >90°
-
-This matches the standard clinical convention: ROM = degrees of bend
-from neutral. PDF target Extension 70–90° and Flexion 80–90° both fall
-within the 0..90 readout range.
+- Hand in line with forearm (horizontal) → **0°** (neutral)
+- Hand bent UP (extension when palm down) → **positive**, up to ~+90°
+- Hand bent DOWN (flexion when palm down) → **negative**, down to ~−90°
 
 ### Formula
 
 Hand vector goes from the wrist landmark to the middle-finger MCP:
 
 ```
-n = mcp.x   − wrist.x          // horizontal component (signed)
-i = wrist.y − mcp.y            // vertical component (screen y inverted)
-from_horizontal = atan2(i, |n|) * 180 / π    // intermediate, range −90…+90
-angle_deg       = 90 − from_horizontal       // final, 0 at upright, 90 at horizontal
+n = (mcp.x − wrist.x) * CAMERA_ASPECT_W_OVER_H   // horizontal (aspect-corrected)
+i = wrist.y − mcp.y                              // vertical (screen y inverted)
+angle_deg = atan2(i, |n|) * 180 / π
 ```
 
 Taking the absolute value of the horizontal component collapses
@@ -175,11 +126,10 @@ left-vs-right and the canvas mirror (`scale(-1, 1)`) into the same
 case, so the formula behaves identically regardless of which hand is
 tracked or how the canvas is displayed.
 
-Range: **0° … ~180°** (typical use stays in 0..90).
-- `0`     = hand upright in line with vertical forearm
-- `~45`   = hand tilted halfway to horizontal
-- `~90`   = hand horizontal (~max anatomical flex or ext)
-- `>90`   = hyperextension past horizontal
+Range: **−90° … +90°**.
+- `+90` = hand straight up
+- `0`   = hand horizontal (neutral)
+- `−90` = hand straight down
 
 ### 2D / model limitation (literal, do not change)
 

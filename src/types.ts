@@ -30,13 +30,6 @@ export interface ElbowState {
   rightForearmRotRaw: number | null;
   leftForearmRotSmoothed: number | null;
   rightForearmRotSmoothed: number | null;
-  // v1.22: forearm-foreshorten detection. Ratio = (2D forearm length on
-  // image plane, aspect-corrected) / (3D forearm length from
-  // poseWorldLandmarks). Used ONLY to flag when the forearm is pointing
-  // toward / away from the camera (= angle no longer reliable). The
-  // angle math itself does NOT consult worldLandmarks.
-  leftForearmRatio2D3D: number | null;
-  rightForearmRatio2D3D: number | null;
 }
 
 export interface HandTrackingState {
@@ -63,13 +56,6 @@ export interface HandTrackingState {
   spreadIndexMiddle: number | null;
   spreadMiddleRing: number | null;
   spreadRingPinky: number | null;
-  // v1.23: same foreshorten detector as ElbowState — ratio of the
-  // aspect-corrected 2D forearm length on the image plane to the
-  // true 3D forearm length from poseWorldLandmarks. Used to flag
-  // when the forearm (and therefore the hand frame) is pointing
-  // toward / away from the camera; the wrist / finger measurements
-  // themselves do NOT consult worldLandmarks.
-  forearmRatio2D3D: number | null;
 }
 
 export interface TrackingState {

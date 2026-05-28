@@ -1,12 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import type { TrackingState, GameMode, HolisticResults, Landmark } from '../types';
 import { createElbowState, updateElbow, updateForearmRotation } from './elbowTracker';
-import {
-  createHandState,
-  updateWristExtension,
-  updateWrist3D,
-  updateHandForearmRatio,
-} from './wristTracker';
+import { createHandState, updateWristExtension, updateWrist3D } from './wristTracker';
 import { updateFingerOpenness } from './fingerTracker';
 
 /** Per-frame listener invoked after trackers update. Used by the research
@@ -103,12 +98,11 @@ type ModelKind = 'pose' | 'hands' | 'pose+hands';
 
 function modelKindForMode(mode: GameMode): ModelKind {
   if (mode === 'elbow') return 'pose';
-  // v1.23: fingers mode also runs Pose alongside Hands so the
-  // foreshorten-detection metric (2D/3D forearm ratio, written into
-  // HandTrackingState.forearmRatio2D3D) has worldLandmarks to consume.
-  // Pose runs at modelComplexity 0 in pose+hands so the overhead is
-  // small.
-  return 'pose+hands';
+  if (mode === 'wrist') return 'pose+hands';
+  // v1.24: fingers mode back to hands-only — extra Pose pass was
+  // slowing hand detection without giving useful information for
+  // finger openness measurement.
+  return 'hands';
 }
 
 interface ModelHandle {
@@ -309,27 +303,16 @@ export function useTracking(activeMode: GameMode, frameListenerRef?: FrameListen
       updateForearmRotation(s.elbow, results.poseLandmarks);
     } else {
       // wrist and fingers both consume hand landmarks.
-      // updateWristExtension is hand-only — uses the restored deploy
-      // formula atan2(i, |n|) with a fixed horizontal reference.
+      // updateWristExtension uses the deploy formula atan2(i, |n|) on
+      // hand-only landmarks (horizontal-forearm sideways convention).
       updateWristExtension(s.leftHand, results.leftHandLandmarks);
       updateWristExtension(s.rightHand, results.rightHandLandmarks);
       updateFingerOpenness(s.leftHand, results.leftHandLandmarks);
       updateFingerOpenness(s.rightHand, results.rightHandLandmarks);
 
-      // v1.23: same foreshorten-detection metric the elbow tracker
-      // uses, exposed per-hand for wrist + fingers overlays. Pose
-      // landmarks ARE available in both modes now (fingers also runs
-      // pose+hands as of v1.23). Pose is consulted ONLY for this
-      // ratio; the wrist / finger angles themselves are 2D-image-only.
-      updateHandForearmRatio(
-        s.leftHand, results.poseLandmarks, results.poseWorldLandmarks, 'left',
-      );
-      updateHandForearmRatio(
-        s.rightHand, results.poseLandmarks, results.poseWorldLandmarks, 'right',
-      );
-
       // In wrist mode, Pose also drives the unsigned 3D wrist deviation
-      // used by prayer-stretch analysis (separate data path).
+      // used by prayer-stretch analysis (separate data path). Fingers
+      // mode doesn't run Pose at all.
       if (mode === 'wrist') {
         updateWrist3D(s.leftHand, results.poseWorldLandmarks, 'left');
         updateWrist3D(s.rightHand, results.poseWorldLandmarks, 'right');

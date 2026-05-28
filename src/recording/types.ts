@@ -127,9 +127,14 @@ export interface SideStats {
   rawMin: number | null;
   rawMax: number | null;
   rawRom: number | null;
-  filtMin: number | null;
-  filtMax: number | null;
-  filtRom: number | null;
+  /** v1.15: min/max/ROM computed from the SMOOTHED, CONTINUOUS angle,
+   *  excluding glitch frames (anomaly_flag === 1). Rounded to 1 decimal
+   *  by the consumer. */
+  angleMin: number | null;
+  angleMax: number | null;
+  rom: number | null;
+  /** Std-dev of the smoothed signal across ALL frames (legacy variability
+   *  metric — does not filter anomaly frames). */
   filtStd: number | null;
   lowVisibilityPct: number | null;
 }
@@ -158,21 +163,23 @@ export interface TrialSummary {
   notes: string;
   duration_s: number;
   n_frames: number;
-  // Side stats (filtered + low-vis %).
+  // Side stats. Raw = pre-EMA values (kept for sensitivity analysis).
+  // Angle min/max/ROM = smoothed continuous angle, GLITCH FRAMES SKIPPED
+  // (anomaly_flag === 0 only). Rounded to 1 decimal.
   left_raw_min: number | null;
   left_raw_max: number | null;
   left_raw_rom: number | null;
-  left_filt_min: number | null;
-  left_filt_max: number | null;
-  left_filt_rom: number | null;
+  left_angle_min: number | null;
+  left_angle_max: number | null;
+  left_rom: number | null;
   left_filt_std: number | null;
   left_low_visibility_pct: number | null;
   right_raw_min: number | null;
   right_raw_max: number | null;
   right_raw_rom: number | null;
-  right_filt_min: number | null;
-  right_filt_max: number | null;
-  right_filt_rom: number | null;
+  right_angle_min: number | null;
+  right_angle_max: number | null;
+  right_rom: number | null;
   right_filt_std: number | null;
   right_low_visibility_pct: number | null;
   // Post-hoc anomaly + sampling stats.

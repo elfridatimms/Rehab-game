@@ -124,12 +124,14 @@ export function drawWristOverlay(
     const handLen = Math.hypot(mx - wx, my - wy);
     const refHalf = Math.max(40, handLen);
 
-    // VERTICAL reference through wrist = 0° / neutral axis.
+    // HORIZONTAL reference through wrist = 0° / neutral axis (sideways
+    // forearm convention: neutral hand sits horizontal along the
+    // forearm).
     ctx.strokeStyle = COLORS.reference;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(wx, wy - refHalf);
-    ctx.lineTo(wx, wy + refHalf);
+    ctx.moveTo(wx - refHalf, wy);
+    ctx.lineTo(wx + refHalf, wy);
     ctx.stroke();
 
     // Active wrist→MCP (the hand vector that feeds the angle formula).
@@ -145,12 +147,10 @@ export function drawWristOverlay(
     ctx.arc(wx, wy, 6, 0, Math.PI * 2);
     ctx.fill();
 
-    drawLabel(ctx, `${Math.round(angle)}°`, wx, wy - 18);
-
-    // v1.23 DEBUG: foreshorten ratio (same metric as elbow). Small
-    // label below the wrist marker. Threshold pending calibration.
-    const ratio = hand.handState.forearmRatio2D3D;
-    const ratioText = ratio != null ? `r=${ratio.toFixed(2)}` : 'r=—';
-    drawLabel(ctx, ratioText, wx, wy + 30, 14);
+    // Signed display: "+45°" for extension (up), "-30°" for flexion
+    // (down). Neutral horizontal hand reads ~0°.
+    const rounded = Math.round(angle);
+    const sign = rounded > 0 ? '+' : '';
+    drawLabel(ctx, `${sign}${rounded}°`, wx, wy - 18);
   }
 }

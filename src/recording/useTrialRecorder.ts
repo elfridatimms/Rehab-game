@@ -143,35 +143,56 @@ function minMaxOf(values: readonly number[]): { min: number; max: number } | nul
   return { min, max };
 }
 
+function round1(n: number | null): number | null {
+  if (n === null || !Number.isFinite(n)) return null;
+  return Math.round(n * 10) / 10;
+}
+
 // ─── Stats over a side's samples ─────────────────────────────
+// v1.15: angle min/max/ROM are computed from `cleanFiltSamples` — the
+// smoothed continuous-angle values collected ONLY from frames where the
+// landmark was detected AND the post-hoc anomaly flag is 0. This is the
+// signal the user actually cares about for ROM analysis; raw + all-frame
+// filtered stats are kept alongside for sensitivity work.
 function computeSideStats(
   rawSamples: number[],
   filtSamples: number[],
-  visSamples: number[]
+  cleanFiltSamples: number[],
+  visSamples: number[],
 ): SideStats {
-  if (rawSamples.length === 0 && filtSamples.length === 0 && visSamples.length === 0) {
+  const empty =
+    rawSamples.length === 0 &&
+    filtSamples.length === 0 &&
+    cleanFiltSamples.length === 0 &&
+    visSamples.length === 0;
+  if (empty) {
     return {
       rawMin: null,
       rawMax: null,
       rawRom: null,
-      filtMin: null,
-      filtMax: null,
-      filtRom: null,
+      angleMin: null,
+      angleMax: null,
+      rom: null,
       filtStd: null,
       lowVisibilityPct: null,
     };
   }
 
   const rawMM = minMaxOf(rawSamples);
-  const filtMM = minMaxOf(filtSamples);
   const rawMin = rawMM ? rawMM.min : null;
   const rawMax = rawMM ? rawMM.max : null;
-  const filtMin = filtMM ? filtMM.min : null;
-  const filtMax = filtMM ? filtMM.max : null;
 
+  // Continuous angle min/max from CLEAN frames only (skip glitches so a
+  // single bad frame can't become the min or max).
+  const cleanMM = minMaxOf(cleanFiltSamples);
+  const angleMin = cleanMM ? round1(cleanMM.min) : null;
+  const angleMax = cleanMM ? round1(cleanMM.max) : null;
+  const rom =
+    angleMin !== null && angleMax !== null ? round1(angleMax - angleMin) : null;
+
+  // Std-dev kept on ALL filtered samples (legacy variability metric).
   let filtStd: number | null = null;
   if (filtSamples.length >= 2) {
-    // Single-pass mean + variance accumulation.
     let sum = 0;
     for (const v of filtSamples) sum += v;
     const mean = sum / filtSamples.length;
@@ -194,9 +215,9 @@ function computeSideStats(
     rawMin,
     rawMax,
     rawRom: rawMin !== null && rawMax !== null ? rawMax - rawMin : null,
-    filtMin,
-    filtMax,
-    filtRom: filtMin !== null && filtMax !== null ? filtMax - filtMin : null,
+    angleMin,
+    angleMax,
+    rom,
     filtStd,
     lowVisibilityPct,
   };
@@ -458,28 +479,37 @@ export function useTrialRecorder(frameListenerRef: FrameListenerRef): {
   ): { summary: TrialSummary; enriched: EnrichedFrameRow[]; filename: string; captureRates: CaptureRates } {
     const enriched = annotateFrames(exercise.mode, frames);
 
-    // Aggregate per-side numeric samples for legacy stats.
+    // Aggregate per-side numeric samples.
+    //   *Raw  / *Filt: all finite frames (legacy std + raw stats).
+    //   *Clean: smoothed value from frames where anomaly_flag === 0 only
+    //           — feeds angle_min / angle_max / rom (the user-facing ROM).
     const leftRaw: number[] = [];
     const leftFilt: number[] = [];
+    const leftCleanFilt: number[] = [];
     const leftVis: number[] = [];
     const rightRaw: number[] = [];
     const rightFilt: number[] = [];
+    const rightCleanFilt: number[] = [];
     const rightVis: number[] = [];
-    for (const f of frames) {
+    for (const f of enriched) {
       if (f.left_raw !== null && Number.isFinite(f.left_raw)) leftRaw.push(f.left_raw);
-      if (f.left_filtered !== null && Number.isFinite(f.left_filtered))
+      if (f.left_filtered !== null && Number.isFinite(f.left_filtered)) {
         leftFilt.push(f.left_filtered);
+        if (f.left_anomaly_flag === 0) leftCleanFilt.push(f.left_filtered);
+      }
       if (f.left_visibility !== null && Number.isFinite(f.left_visibility))
         leftVis.push(f.left_visibility);
       if (f.right_raw !== null && Number.isFinite(f.right_raw)) rightRaw.push(f.right_raw);
-      if (f.right_filtered !== null && Number.isFinite(f.right_filtered))
+      if (f.right_filtered !== null && Number.isFinite(f.right_filtered)) {
         rightFilt.push(f.right_filtered);
+        if (f.right_anomaly_flag === 0) rightCleanFilt.push(f.right_filtered);
+      }
       if (f.right_visibility !== null && Number.isFinite(f.right_visibility))
         rightVis.push(f.right_visibility);
     }
 
-    const leftStats = computeSideStats(leftRaw, leftFilt, leftVis);
-    const rightStats = computeSideStats(rightRaw, rightFilt, rightVis);
+    const leftStats = computeSideStats(leftRaw, leftFilt, leftCleanFilt, leftVis);
+    const rightStats = computeSideStats(rightRaw, rightFilt, rightCleanFilt, rightVis);
     const fps = computeFpsStats(frames);
     const rates = computeCaptureRates(enriched);
     const anomalies = countAnomalies(enriched);
@@ -521,21 +551,22 @@ export function useTrialRecorder(frameListenerRef: FrameListenerRef): {
       notes: meta.notes,
       duration_s: Number(durationS.toFixed(3)),
       n_frames: frames.length,
-      // legacy side stats
+      // Per-side stats. *_angle_min/max + *_rom are the user-facing
+      // ROM (smoothed, continuous, glitch frames skipped, 1-decimal).
       left_raw_min: leftStats.rawMin,
       left_raw_max: leftStats.rawMax,
       left_raw_rom: leftStats.rawRom,
-      left_filt_min: leftStats.filtMin,
-      left_filt_max: leftStats.filtMax,
-      left_filt_rom: leftStats.filtRom,
+      left_angle_min: leftStats.angleMin,
+      left_angle_max: leftStats.angleMax,
+      left_rom: leftStats.rom,
       left_filt_std: leftStats.filtStd,
       left_low_visibility_pct: leftStats.lowVisibilityPct,
       right_raw_min: rightStats.rawMin,
       right_raw_max: rightStats.rawMax,
       right_raw_rom: rightStats.rawRom,
-      right_filt_min: rightStats.filtMin,
-      right_filt_max: rightStats.filtMax,
-      right_filt_rom: rightStats.filtRom,
+      right_angle_min: rightStats.angleMin,
+      right_angle_max: rightStats.angleMax,
+      right_rom: rightStats.rom,
       right_filt_std: rightStats.filtStd,
       right_low_visibility_pct: rightStats.lowVisibilityPct,
       // new anomaly + FPS columns
