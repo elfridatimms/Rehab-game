@@ -91,16 +91,20 @@ export function drawWristOverlay(
   const w = canvas.width;
   const h = canvas.height;
 
+  const pose = results.poseLandmarks;
+
   const hands = [
     {
       landmarks: results.leftHandLandmarks,
       handState: state.leftHand,
       activeColor: COLORS.activeLeft,
+      poseElbowIdx: 13,
     },
     {
       landmarks: results.rightHandLandmarks,
       handState: state.rightHand,
       activeColor: COLORS.activeRight,
+      poseElbowIdx: 14,
     },
   ];
 
@@ -121,18 +125,20 @@ export function drawWristOverlay(
 
     const [wx, wy] = toCanvas(wrist, w, h);
     const [mx, my] = toCanvas(mcp, w, h);
-    const handLen = Math.hypot(mx - wx, my - wy);
-    const refHalf = Math.max(40, handLen);
 
-    // HORIZONTAL reference through wrist = 0° / neutral axis (sideways
-    // forearm convention: neutral hand sits horizontal along the
-    // forearm).
-    ctx.strokeStyle = COLORS.reference;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(wx - refHalf, wy);
-    ctx.lineTo(wx + refHalf, wy);
-    ctx.stroke();
+    // FOREARM reference (wrist → elbow) — drawn whenever Pose has the
+    // elbow landmark. "Neutral straight" = hand vector parallel to
+    // forearm = 90° on the scale; this line shows where neutral lies.
+    const elbow = pose?.[hand.poseElbowIdx];
+    if (elbow) {
+      const [ex, ey] = toCanvas(elbow, w, h);
+      ctx.strokeStyle = COLORS.reference;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(wx, wy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+    }
 
     // Active wrist→MCP (the hand vector that feeds the angle formula).
     ctx.strokeStyle = hand.activeColor;

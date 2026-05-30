@@ -99,31 +99,40 @@ and right.
 
 ### Reference
 
-The wrist exercise assumes the **forearm is held horizontal across
-the image plane** (sideways pose). On a `0..180` scale matching the
-elbow:
+The reference axis is **the forearm itself** (Pose elbow → wrist).
+The displayed angle is the angle of the hand vector
+(wrist → middle MCP) from the axis PERPENDICULAR to the forearm.
 
-- Hand in line with horizontal forearm → **90°** (neutral, centre)
-- Hand bent UP (extension when palm down) → **→180°**
-- Hand bent DOWN (flexion when palm down) → **→0°**
+This works for ANY forearm orientation — sideways with horizontal
+forearm, prayer-stretch with vertical forearm, any diagonal. As long
+as the hand is collinear with the forearm (neutral straight), the
+reading is **90°**. As the wrist bends, the reading moves toward 0
+or 180 depending on bend direction.
 
-The signal is continuous through 90 — no reset or fold at the
-boundary as the wrist moves through the full range.
+| Pose | Neutral reading |
+|---|---|
+| Sideways (forearm horizontal, hand horizontal) | **90°** |
+| Prayer-stretch (forearm vertical, hand vertical) | **90°** |
+| Any diagonal forearm with hand in line | **90°** |
+| Hand bent 90° one way | → **0°** |
+| Hand bent 90° other way | → **180°** |
+
+The signal is continuous through 90 — no reset or fold.
 
 ### Formula
 
-Hand vector goes from the wrist landmark to the middle-finger MCP:
-
 ```
-n = (mcp.x − wrist.x) * CAMERA_ASPECT_W_OVER_H   // horizontal (aspect-corrected)
-i = wrist.y − mcp.y                              // vertical (screen y inverted)
-angle_deg = 90 + atan2(i, |n|) * 180 / π
+forearm = (elbow − wrist)   * aspect-corrected   // from Pose 13/14
+hand    = (mcp   − wrist)   * aspect-corrected   // from Hands 0 → 9
+perp    = rotate90CCW(forearm) = (−forearm.y, forearm.x)
+cos     = (perp · hand) / (|perp| · |hand|)
+angle_deg = acos(cos) * 180 / π        // 0..180, 90 at neutral
 ```
 
-Taking the absolute value of the horizontal component collapses
-left-vs-right and the canvas mirror (`scale(-1, 1)`) into the same
-case, so the formula behaves identically regardless of which hand is
-tracked or how the canvas is displayed.
+Wrist mode must load **Pose alongside Hands** (already does via the
+`pose+hands` model kind in `useTracking.ts`) so the elbow landmark
+is available. Without Pose, the angle is null and the overlay shows
+only the raw hand skeleton.
 
 Range: **0° … 180°**, neutral at 90.
 

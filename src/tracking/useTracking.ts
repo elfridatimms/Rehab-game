@@ -307,17 +307,18 @@ export function useTracking(activeMode: GameMode, frameListenerRef?: FrameListen
       updateForearmRotation(s.elbow, results.poseLandmarks);
     } else {
       // wrist and fingers both consume hand landmarks.
-      // updateWristExtension uses the deploy formula atan2(i, |n|) on
-      // hand-only landmarks (horizontal-forearm sideways convention).
-      updateWristExtension(s.leftHand, results.leftHandLandmarks);
-      updateWristExtension(s.rightHand, results.rightHandLandmarks);
+      // v1.26: updateWristExtension now uses Pose's elbow + Hands' wrist
+      // & MCP to compute the angle from the forearm-perpendicular axis,
+      // so neutral straight reads 90 in ANY pose (sideways, prayer-
+      // stretch vertical, diagonal). Hands-only fingers mode can't
+      // compute this (no Pose) — wrist angle is then null.
+      updateWristExtension(s.leftHand, results.leftHandLandmarks, results.poseLandmarks, 'left');
+      updateWristExtension(s.rightHand, results.rightHandLandmarks, results.poseLandmarks, 'right');
       updateFingerOpenness(s.leftHand, results.leftHandLandmarks);
       updateFingerOpenness(s.rightHand, results.rightHandLandmarks);
 
-      // v1.25: in wrist mode, Pose's image-plane elbow + Hands wrist
-      // & middle-MCP feed the forearm↔hand interior angle used by
-      // prayer-stretch analysis (separate data path from the main
-      // wrist deflection). Fingers mode doesn't load Pose.
+      // Secondary forearm ↔ hand interior angle for prayer-stretch
+      // analysis (small p:Y° in the overlay). Wrist mode only.
       if (mode === 'wrist') {
         updateWristForearmInterior(s.leftHand, results.leftHandLandmarks, results.poseLandmarks, 'left');
         updateWristForearmInterior(s.rightHand, results.rightHandLandmarks, results.poseLandmarks, 'right');
