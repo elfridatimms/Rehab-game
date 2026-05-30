@@ -1,11 +1,7 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import type { TrackingState, GameMode, HolisticResults, Landmark } from '../types';
 import { createElbowState, updateElbow, updateForearmRotation } from './elbowTracker';
-import {
-  createHandState,
-  updateWristExtension,
-  updateWristForearmInterior,
-} from './wristTracker';
+import { createHandState, updateWristExtension } from './wristTracker';
 import { updateFingerOpenness } from './fingerTracker';
 
 /** Per-frame listener invoked after trackers update. Used by the research
@@ -93,19 +89,18 @@ function createInitialState(): TrackingState {
 }
 
 // ─── Per-mode model factories ────────────────────────────────
-// v1.8: wrist mode runs Pose AND Hands in parallel. Pose gives the
-// elbow → wrist forearm direction in 3D so wrist flexion is measurable
-// regardless of camera viewpoint (forward, sideways, oblique). Hands is
-// still needed for fine hand landmarks (overlay skeleton + the existing
-// 2D signed angle).
+// v1.29: wrist mode back to HANDS-ONLY (Pose dropped). Running two
+// models in parallel was slowing hand detection — especially with
+// single-hand exercises, where the Pose pass added latency without
+// giving information the simple horizontal-forearm wrist formula needs.
+// Prayer-stretch / vertical-forearm exercises are not supported by
+// this mode (intentionally — the wrist tracker now assumes a roughly
+// horizontal forearm and measures pure flexion / extension).
 type ModelKind = 'pose' | 'hands' | 'pose+hands';
 
 function modelKindForMode(mode: GameMode): ModelKind {
   if (mode === 'elbow') return 'pose';
-  if (mode === 'wrist') return 'pose+hands';
-  // v1.24: fingers mode back to hands-only — extra Pose pass was
-  // slowing hand detection without giving useful information for
-  // finger openness measurement.
+  // wrist + fingers both go through hands-only.
   return 'hands';
 }
 
@@ -313,23 +308,13 @@ export function useTracking(activeMode: GameMode, frameListenerRef?: FrameListen
       updateElbow(s.elbow, results.poseLandmarks, results.poseWorldLandmarks);
       updateForearmRotation(s.elbow, results.poseLandmarks);
     } else {
-      // wrist and fingers both consume hand landmarks.
-      // v1.26: updateWristExtension now uses Pose's elbow + Hands' wrist
-      // & MCP to compute the angle from the forearm-perpendicular axis,
-      // so neutral straight reads 90 in ANY pose (sideways, prayer-
-      // stretch vertical, diagonal). Hands-only fingers mode can't
-      // compute this (no Pose) — wrist angle is then null.
-      updateWristExtension(s.leftHand, results.leftHandLandmarks, results.poseLandmarks, 'left');
-      updateWristExtension(s.rightHand, results.rightHandLandmarks, results.poseLandmarks, 'right');
+      // wrist + fingers: hands-only. Wrist uses a horizontal-forearm
+      // assumption (sideways flex/extend exercises) and works on a
+      // single hand — the other hand may be entirely out of frame.
+      updateWristExtension(s.leftHand, results.leftHandLandmarks);
+      updateWristExtension(s.rightHand, results.rightHandLandmarks);
       updateFingerOpenness(s.leftHand, results.leftHandLandmarks);
       updateFingerOpenness(s.rightHand, results.rightHandLandmarks);
-
-      // Secondary forearm ↔ hand interior angle for prayer-stretch
-      // analysis (small p:Y° in the overlay). Wrist mode only.
-      if (mode === 'wrist') {
-        updateWristForearmInterior(s.leftHand, results.leftHandLandmarks, results.poseLandmarks, 'left');
-        updateWristForearmInterior(s.rightHand, results.rightHandLandmarks, results.poseLandmarks, 'right');
-      }
     }
 
     if (frameListenerRef?.current) {

@@ -93,16 +93,6 @@ export const WristPanel: React.FC<WristPanelProps> = ({
               {leftPeak != null ? `${Math.round(leftPeak)}°` : '—'}
             </span>
           </div>
-          {/* v1.8: 3D camera-invariant magnitude (works when forearm
-              points toward camera). Shown alongside the 2D signed value. */}
-          <div className="stat-mini">
-            <span className="stat-mini-label">3D deviation</span>
-            <span className="stat-mini-value">
-              {leftHand.smoothedWrist3DDeg != null
-                ? `${Math.round(leftHand.smoothedWrist3DDeg)}°`
-                : '—'}
-            </span>
-          </div>
         </div>
 
         {/* Right hand */}
@@ -134,14 +124,6 @@ export const WristPanel: React.FC<WristPanelProps> = ({
             <span className="stat-mini-label">Best beam</span>
             <span className="stat-mini-value best">
               {rightPeak != null ? `${Math.round(rightPeak)}°` : '—'}
-            </span>
-          </div>
-          <div className="stat-mini">
-            <span className="stat-mini-label">3D deviation</span>
-            <span className="stat-mini-value">
-              {rightHand.smoothedWrist3DDeg != null
-                ? `${Math.round(rightHand.smoothedWrist3DDeg)}°`
-                : '—'}
             </span>
           </div>
         </div>
