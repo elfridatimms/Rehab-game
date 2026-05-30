@@ -52,6 +52,26 @@ export const FINGER_RATIO_OPEN = 2.6;
  *  enough that the readout still tracks rapid motion. */
 export const FINGER_SMOOTHING_FACTOR = 0.18;
 
+// ─── Functional hand-openness metric (fist making / finger extension) ──
+// NOTE: This is a FUNCTIONAL openness metric, NOT a precise anatomical
+// measurement of individual finger joints. It captures how open/closed
+// the hand is as a whole, normalised by palm size so it is roughly
+// distance-invariant.
+
+/** EMA smoothing for the palm-center hand-openness ratio. ~0.3 default. */
+export const HAND_OPENNESS_SMOOTHING_FACTOR = 0.3;
+
+/** Minimum palm size (dist(wrist, middle-MCP), aspect-corrected, in
+ *  normalised units) below which the frame is treated as invalid — the
+ *  hand is too small / too far / landmarks collapsed. */
+export const PALM_SIZE_MIN = 0.02;
+
+/** Hand-state hysteresis thresholds on hand_openness_percent (0–100).
+ *  > OPEN  → "open"; < CLOSED → "closed"; otherwise "transition".
+ *  Exposed as config so they can be retuned without touching logic. */
+export const HAND_OPEN_THRESHOLD = 75;
+export const HAND_CLOSED_THRESHOLD = 35;
+
 // ─── Drawing Constants ────────────────────────────────────────
 export const REF_LINE_LEN = 80;
 export const ARC_RADIUS = 40;

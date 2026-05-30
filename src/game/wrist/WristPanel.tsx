@@ -52,6 +52,15 @@ export const WristPanel: React.FC<WristPanelProps> = ({
   const rightAngle = rightHand.smoothedWristExtensionDeg;
   const leftPeak = leftHand.peakWristExtensionDeg;
   const rightPeak = rightHand.peakWristExtensionDeg;
+  // Live ROM = running max (peak) − running min, per hand.
+  const leftRom =
+    leftPeak != null && leftHand.minWristExtensionDeg != null
+      ? leftPeak - leftHand.minWristExtensionDeg
+      : null;
+  const rightRom =
+    rightPeak != null && rightHand.minWristExtensionDeg != null
+      ? rightPeak - rightHand.minWristExtensionDeg
+      : null;
 
   return (
     <div className="game-panel wrist-panel">
@@ -93,6 +102,12 @@ export const WristPanel: React.FC<WristPanelProps> = ({
               {leftPeak != null ? `${Math.round(leftPeak)}°` : '—'}
             </span>
           </div>
+          <div className="stat-mini">
+            <span className="stat-mini-label">ROM</span>
+            <span className="stat-mini-value">
+              {leftRom != null ? `${Math.round(leftRom)}°` : '—'}
+            </span>
+          </div>
         </div>
 
         {/* Right hand */}
@@ -124,6 +139,12 @@ export const WristPanel: React.FC<WristPanelProps> = ({
             <span className="stat-mini-label">Best beam</span>
             <span className="stat-mini-value best">
               {rightPeak != null ? `${Math.round(rightPeak)}°` : '—'}
+            </span>
+          </div>
+          <div className="stat-mini">
+            <span className="stat-mini-label">ROM</span>
+            <span className="stat-mini-value">
+              {rightRom != null ? `${Math.round(rightRom)}°` : '—'}
             </span>
           </div>
         </div>

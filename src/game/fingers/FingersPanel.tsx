@@ -47,10 +47,23 @@ export const FingersPanel: React.FC<FingersPanelProps> = ({
     prevRightPeak.current = rightHand.peakOpenHandScore;
   }, [rightHand.peakOpenHandScore]);
 
-  const leftScore = leftHand.smoothedOpenHandScore;
-  const rightScore = rightHand.smoothedOpenHandScore;
-  const leftPeak = leftHand.peakOpenHandScore;
-  const rightPeak = rightHand.peakOpenHandScore;
+  // v1.32: headline metric is now the FUNCTIONAL palm-center openness
+  // (dynamic %, 0 = most-closed seen this session, 100 = most-open). The
+  // legacy deploy openness score is kept as a small secondary readout.
+  const leftPct = leftHand.handOpennessPercent;
+  const rightPct = rightHand.handOpennessPercent;
+  const leftState = leftHand.handState;
+  const rightState = rightHand.handState;
+  const leftFnRom =
+    leftHand.handOpennessMax != null && leftHand.handOpennessMin != null
+      ? leftHand.handOpennessMax - leftHand.handOpennessMin
+      : null;
+  const rightFnRom =
+    rightHand.handOpennessMax != null && rightHand.handOpennessMin != null
+      ? rightHand.handOpennessMax - rightHand.handOpennessMin
+      : null;
+  const leftDeploy = leftHand.smoothedOpenHandScore;
+  const rightDeploy = rightHand.smoothedOpenHandScore;
 
   return (
     <div className="game-panel fingers-panel">
@@ -68,24 +81,33 @@ export const FingersPanel: React.FC<FingersPanelProps> = ({
             <span>Left hand</span>
           </div>
           <ScoreCard
-            label="Openness"
-            value={leftScore != null ? Math.round(leftScore) : '—'}
+            label="Hand openness"
+            value={leftPct != null ? Math.round(leftPct) : '—'}
             unit="%"
             accent="#34d399"
             size="md"
           />
           <ProgressBar
-            value={leftScore ?? 0}
-            peak={leftPeak}
+            value={leftPct ?? 0}
             color="#10b981"
             colorEnd="#34d399"
-            label="Bloom"
-            sublabel={leftScore != null ? `${Math.round(leftScore)}%` : 'Waiting...'}
+            label="Openness"
+            sublabel={leftState != null ? leftState : 'Waiting...'}
           />
           <div className="stat-mini">
-            <span className="stat-mini-label">Best bloom</span>
+            <span className="stat-mini-label">Hand state</span>
+            <span className="stat-mini-value">{leftState ?? '—'}</span>
+          </div>
+          <div className="stat-mini">
+            <span className="stat-mini-label">Functional ROM</span>
             <span className="stat-mini-value best">
-              {leftPeak != null ? `${Math.round(leftPeak)}%` : '—'}
+              {leftFnRom != null ? leftFnRom.toFixed(2) : '—'}
+            </span>
+          </div>
+          <div className="stat-mini">
+            <span className="stat-mini-label">Score (legacy)</span>
+            <span className="stat-mini-value">
+              {leftDeploy != null ? `${Math.round(leftDeploy)}%` : '—'}
             </span>
           </div>
           {/* v1.10: per-finger spread angles. Each is the angle at the
@@ -100,24 +122,33 @@ export const FingersPanel: React.FC<FingersPanelProps> = ({
             <span>Right hand</span>
           </div>
           <ScoreCard
-            label="Openness"
-            value={rightScore != null ? Math.round(rightScore) : '—'}
+            label="Hand openness"
+            value={rightPct != null ? Math.round(rightPct) : '—'}
             unit="%"
             accent="#fb923c"
             size="md"
           />
           <ProgressBar
-            value={rightScore ?? 0}
-            peak={rightPeak}
+            value={rightPct ?? 0}
             color="#f97316"
             colorEnd="#fb923c"
-            label="Bloom"
-            sublabel={rightScore != null ? `${Math.round(rightScore)}%` : 'Waiting...'}
+            label="Openness"
+            sublabel={rightState != null ? rightState : 'Waiting...'}
           />
           <div className="stat-mini">
-            <span className="stat-mini-label">Best bloom</span>
+            <span className="stat-mini-label">Hand state</span>
+            <span className="stat-mini-value">{rightState ?? '—'}</span>
+          </div>
+          <div className="stat-mini">
+            <span className="stat-mini-label">Functional ROM</span>
             <span className="stat-mini-value best">
-              {rightPeak != null ? `${Math.round(rightPeak)}%` : '—'}
+              {rightFnRom != null ? rightFnRom.toFixed(2) : '—'}
+            </span>
+          </div>
+          <div className="stat-mini">
+            <span className="stat-mini-label">Score (legacy)</span>
+            <span className="stat-mini-value">
+              {rightDeploy != null ? `${Math.round(rightDeploy)}%` : '—'}
             </span>
           </div>
           <FingerSpreads state={rightHand} />

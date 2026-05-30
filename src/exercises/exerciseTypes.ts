@@ -47,4 +47,4 @@ export interface Exercise {
 // ─── App version ─────────────────────────────────────────────
 /** Bump this whenever the recording schema changes. Written into the
  *  summary CSV column `app_version`. */
-export const APP_VERSION = 'v1.15a-angle-min-max-rom';
+export const APP_VERSION = 'v1.32-functional-hand-openness-rom';

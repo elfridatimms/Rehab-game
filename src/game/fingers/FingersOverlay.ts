@@ -52,6 +52,32 @@ function drawLabel(
   ctx.fillText(text, x, y);
 }
 
+/** Small caption line under the main % label (state / functional ROM). */
+function drawCaption(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+): void {
+  ctx.font = `600 14px "Inter", system-ui, sans-serif`;
+  const m = ctx.measureText(text);
+  const padX = 8;
+  const padY = 3;
+  const tw = m.width + padX * 2;
+  const th = 14 + padY * 2;
+  ctx.fillStyle = COLORS.textBg;
+  ctx.fillRect(x - tw / 2, y - th / 2, tw, th);
+  ctx.fillStyle = COLORS.text;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y);
+}
+
+// Palm center = average of the four finger MCP joints (5,9,13,17); the
+// openness lines run from there to the four (non-thumb) fingertips.
+const PALM_MCPS = [5, 9, 13, 17];
+const OPENNESS_TIPS = [8, 12, 16, 20];
+
 function drawRawHandSkeleton(
   ctx: CanvasRenderingContext2D,
   hand: Landmark[],
@@ -111,36 +137,56 @@ export function drawFingersOverlay(
     // Always draw the raw hand skeleton underlay.
     drawRawHandSkeleton(ctx, hand.landmarks, w, h);
 
-    const score = hand.handState.smoothedOpenHandScore;
-    if (score == null) continue;
+    // Functional palm-center openness. If we don't have a percent yet
+    // (range not established) we still draw the palm-center geometry.
+    const hs = hand.handState;
 
-    const wrist = hand.landmarks[0];
-    const mcp = hand.landmarks[9];
-    if (!wrist || !mcp) continue;
+    // Palm center = mean of the four MCP joints, in canvas space.
+    let cx = 0;
+    let cy = 0;
+    let ok = true;
+    for (const idx of PALM_MCPS) {
+      const lm = hand.landmarks[idx];
+      if (!lm) { ok = false; break; }
+      const [px, py] = toCanvas(lm, w, h);
+      cx += px;
+      cy += py;
+    }
+    if (!ok) continue;
+    cx /= PALM_MCPS.length;
+    cy /= PALM_MCPS.length;
 
-    const [wx, wy] = toCanvas(wrist, w, h);
-    const [mx, my] = toCanvas(mcp, w, h);
+    // Lines from palm center to the four (non-thumb) fingertips — the
+    // exact segments whose normalised lengths feed the openness metric.
+    ctx.strokeStyle = hand.activeColor;
+    ctx.lineWidth = 3;
+    for (const tip of OPENNESS_TIPS) {
+      const lm = hand.landmarks[tip];
+      if (!lm) continue;
+      const [tx, ty] = toCanvas(lm, w, h);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+    }
 
-    // Palm reference (wrist → middle MCP, slightly brighter grey).
-    ctx.strokeStyle = COLORS.palmRef;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(wx, wy);
-    ctx.lineTo(mx, my);
-    ctx.stroke();
-
-    // Wrist + MCP markers in the side colour so the user sees which
-    // hand the % belongs to.
+    // Palm center marker.
     ctx.fillStyle = hand.activeColor;
     ctx.beginPath();
-    ctx.arc(wx, wy, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(mx, my, 4, 0, Math.PI * 2);
+    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
     ctx.fill();
 
-    const cx = (wx + mx) / 2;
-    const cy = (wy + my) / 2;
-    drawLabel(ctx, `${Math.round(score)}%`, cx, cy);
+    // Labels: big openness % + caption with state / functional ROM.
+    const pct = hs.handOpennessPercent;
+    drawLabel(ctx, pct != null ? `${Math.round(pct)}%` : '—', cx, cy - 26);
+
+    const fnRom =
+      hs.handOpennessMax != null && hs.handOpennessMin != null
+        ? hs.handOpennessMax - hs.handOpennessMin
+        : null;
+    const parts: string[] = [];
+    if (hs.handState) parts.push(hs.handState);
+    if (fnRom != null) parts.push(`ROM ${fnRom.toFixed(2)}`);
+    if (parts.length > 0) drawCaption(ctx, parts.join(' · '), cx, cy + 16);
   }
 }

@@ -89,6 +89,13 @@ export function writeSubjectId(id: string): void {
 
 // ─── Per-mode frame extraction ───────────────────────────────
 function extractFrame(mode: GameMode, s: TrackingState): Omit<FrameRow, 'frame_idx' | 'timestamp_ms'> {
+  // Openness fields are only populated in fingers mode.
+  const noOpenness = {
+    left_hand_openness_raw: null,
+    left_hand_openness_filtered: null,
+    right_hand_openness_raw: null,
+    right_hand_openness_filtered: null,
+  };
   if (mode === 'elbow') {
     const e = s.elbow;
     return {
@@ -100,6 +107,7 @@ function extractFrame(mode: GameMode, s: TrackingState): Omit<FrameRow, 'frame_i
       right_raw: e.rightRaw,
       right_filtered: e.rightSmoothed,
       right_visibility: e.rightVisibility,
+      ...noOpenness,
     };
   }
   if (mode === 'wrist') {
@@ -111,9 +119,12 @@ function extractFrame(mode: GameMode, s: TrackingState): Omit<FrameRow, 'frame_i
       right_raw: s.rightHand.rawWristExtensionDeg,
       right_filtered: s.rightHand.smoothedWristExtensionDeg,
       right_visibility: s.rightHand.visibility,
+      ...noOpenness,
     };
   }
-  // fingers
+  // fingers. left_raw/left_filtered keep the legacy deploy openness score
+  // (0–100) for backward compatibility; the new functional palm-center
+  // openness is carried separately in the hand_openness_* fields.
   return {
     active_side: null,
     left_raw: s.leftHand.rawOpenHandScore,
@@ -122,6 +133,10 @@ function extractFrame(mode: GameMode, s: TrackingState): Omit<FrameRow, 'frame_i
     right_raw: s.rightHand.rawOpenHandScore,
     right_filtered: s.rightHand.smoothedOpenHandScore,
     right_visibility: s.rightHand.visibility,
+    left_hand_openness_raw: s.leftHand.handOpennessRaw,
+    left_hand_openness_filtered: s.leftHand.handOpennessSmoothed,
+    right_hand_openness_raw: s.rightHand.handOpennessRaw,
+    right_hand_openness_filtered: s.rightHand.handOpennessSmoothed,
   };
 }
 
@@ -146,6 +161,32 @@ function minMaxOf(values: readonly number[]): { min: number; max: number } | nul
 function round1(n: number | null): number | null {
   if (n === null || !Number.isFinite(n)) return null;
   return Math.round(n * 10) / 10;
+}
+
+function round3(n: number | null): number | null {
+  if (n === null || !Number.isFinite(n)) return null;
+  return Math.round(n * 1000) / 1000;
+}
+
+// ─── Functional hand-openness stats (fingers mode) ───────────
+/** Min/max/ROM of the smoothed palm-center openness over CLEAN frames
+ *  (anomaly_flag === 0). Functional whole-hand metric — not an anatomical
+ *  finger-joint angle. Returns nulls when no clean samples. */
+function computeOpennessStats(
+  enriched: readonly EnrichedFrameRow[],
+  side: 'left' | 'right',
+): { min: number | null; max: number | null; rom: number | null } {
+  let min: number | null = null;
+  let max: number | null = null;
+  for (const f of enriched) {
+    const flag = side === 'left' ? f.left_anomaly_flag : f.right_anomaly_flag;
+    const v = side === 'left' ? f.left_hand_openness_filtered : f.right_hand_openness_filtered;
+    if (flag !== 0 || v === null || !Number.isFinite(v)) continue;
+    min = min === null ? v : Math.min(min, v);
+    max = max === null ? v : Math.max(max, v);
+  }
+  const rom = min !== null && max !== null ? max - min : null;
+  return { min: round3(min), max: round3(max), rom: round3(rom) };
 }
 
 // ─── Stats over a side's samples ─────────────────────────────
@@ -515,6 +556,15 @@ export function useTrialRecorder(frameListenerRef: FrameListenerRef): {
     const anomalies = countAnomalies(enriched);
     const leftPeak = computeRawPeak(exercise.mode, enriched, 'left');
     const rightPeak = computeRawPeak(exercise.mode, enriched, 'right');
+    // Functional hand-openness ROM (fingers mode only; null for angle modes).
+    const leftOpen =
+      exercise.mode === 'fingers'
+        ? computeOpennessStats(enriched, 'left')
+        : { min: null, max: null, rom: null };
+    const rightOpen =
+      exercise.mode === 'fingers'
+        ? computeOpennessStats(enriched, 'right')
+        : { min: null, max: null, rom: null };
 
     const trialIdx = trialIdxRef.current;
     const filename = buildFrameCsvFilename(
@@ -591,6 +641,15 @@ export function useTrialRecorder(frameListenerRef: FrameListenerRef): {
       app_version: APP_VERSION,
       view_orientation: meta.viewOrientation,
       target_rom: exercise.targetROM ?? '',
+      // v1.32: functional hand-openness ROM (fingers only) + rep placeholders.
+      left_hand_openness_min: leftOpen.min,
+      left_hand_openness_max: leftOpen.max,
+      left_functional_hand_rom: leftOpen.rom,
+      right_hand_openness_min: rightOpen.min,
+      right_hand_openness_max: rightOpen.max,
+      right_functional_hand_rom: rightOpen.rom,
+      rep_count: 0,
+      mean_rom_per_rep: null,
     };
 
     // Splice detector outputs into the enriched frames by index.

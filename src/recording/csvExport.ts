@@ -1,6 +1,7 @@
-import type { GameMode } from '../types';
+import type { GameMode, HandOpenState } from '../types';
 import type { Exercise } from '../exercises/exerciseTypes';
 import type { DetectorId } from '../detectors/detectorTypes';
+import { HAND_OPEN_THRESHOLD, HAND_CLOSED_THRESHOLD } from '../tracking/constants';
 import {
   ARM_LABELS,
   BACKGROUND_LABELS,
@@ -12,6 +13,147 @@ import {
   type TrialMetadata,
   type TrialSummary,
 } from './types';
+
+// ─── Per-frame running ROM columns (mode-specific, appended) ─────────
+// These give the trial state UP TO each frame. Running min/max update only
+// on valid frames (anomaly_flag === 0 with a finite value); invalid frames
+// carry the last-known values forward. Reset per trial (this runs once per
+// trial CSV).
+//
+// Angle modes (elbow/wrist): left/right angle_min, angle_max, angle_rom.
+// Hand mode (fingers): the FUNCTIONAL hand-openness columns — raw,
+// filtered, percent, fist_closure_percent, min, max, functional_hand_rom,
+// hand_state. Openness is a functional whole-hand metric, NOT an
+// anatomical finger-joint angle, hence the distinct naming.
+
+function classifyState(percent: number | null): HandOpenState | '' {
+  if (percent === null || !Number.isFinite(percent)) return '';
+  if (percent > HAND_OPEN_THRESHOLD) return 'open';
+  if (percent < HAND_CLOSED_THRESHOLD) return 'closed';
+  return 'transition';
+}
+
+interface RunningColumns {
+  header: readonly string[];
+  /** One cell-array per frame, aligned with the input frame order. */
+  cells: (string | number | null)[][];
+}
+
+function buildAngleRunningColumns(
+  frames: readonly EnrichedFrameRow[],
+): RunningColumns {
+  const header = [
+    'left_angle_min',
+    'left_angle_max',
+    'left_angle_rom',
+    'right_angle_min',
+    'right_angle_max',
+    'right_angle_rom',
+  ] as const;
+
+  let lMin: number | null = null;
+  let lMax: number | null = null;
+  let rMin: number | null = null;
+  let rMax: number | null = null;
+  const cells = frames.map((f) => {
+    if (f.left_anomaly_flag === 0 && f.left_filtered !== null && Number.isFinite(f.left_filtered)) {
+      lMin = lMin === null ? f.left_filtered : Math.min(lMin, f.left_filtered);
+      lMax = lMax === null ? f.left_filtered : Math.max(lMax, f.left_filtered);
+    }
+    if (f.right_anomaly_flag === 0 && f.right_filtered !== null && Number.isFinite(f.right_filtered)) {
+      rMin = rMin === null ? f.right_filtered : Math.min(rMin, f.right_filtered);
+      rMax = rMax === null ? f.right_filtered : Math.max(rMax, f.right_filtered);
+    }
+    const lRom = lMin !== null && lMax !== null ? lMax - lMin : null;
+    const rRom = rMin !== null && rMax !== null ? rMax - rMin : null;
+    return [lMin, lMax, lRom, rMin, rMax, rRom];
+  });
+
+  return { header, cells };
+}
+
+function buildOpennessRunningColumns(
+  frames: readonly EnrichedFrameRow[],
+): RunningColumns {
+  const sideHeader = (side: 'left' | 'right') => [
+    `${side}_hand_openness_raw`,
+    `${side}_hand_openness_filtered`,
+    `${side}_hand_openness_percent`,
+    `${side}_fist_closure_percent`,
+    `${side}_hand_openness_min`,
+    `${side}_hand_openness_max`,
+    `${side}_functional_hand_rom`,
+    `${side}_hand_state`,
+  ];
+  const header = [...sideHeader('left'), ...sideHeader('right')];
+
+  // Running observed min/max of the smoothed openness, per side. Percent is
+  // derived against the running range so it matches the live UI semantics.
+  let lMin: number | null = null;
+  let lMax: number | null = null;
+  let rMin: number | null = null;
+  let rMax: number | null = null;
+
+  const sideCells = (
+    raw: number | null,
+    filt: number | null,
+    valid: boolean,
+    min: number | null,
+    max: number | null,
+  ): { cells: (string | number | null)[]; min: number | null; max: number | null } => {
+    if (valid && filt !== null && Number.isFinite(filt)) {
+      min = min === null ? filt : Math.min(min, filt);
+      max = max === null ? filt : Math.max(max, filt);
+    }
+    const span = min !== null && max !== null ? max - min : 0;
+    let percent: number | null = null;
+    if (valid && filt !== null && Number.isFinite(filt) && span > 1e-6) {
+      percent = Math.max(0, Math.min(100, ((filt - (min as number)) / span) * 100));
+    }
+    const fist = percent !== null ? 100 - percent : null;
+    const rom = min !== null && max !== null ? max - min : null;
+    return {
+      cells: [raw, filt, percent, fist, min, max, rom, classifyState(percent)],
+      min,
+      max,
+    };
+  };
+
+  const cells = frames.map((f) => {
+    const lValid = f.left_anomaly_flag === 0;
+    const rValid = f.right_anomaly_flag === 0;
+    const l = sideCells(
+      f.left_hand_openness_raw,
+      f.left_hand_openness_filtered,
+      lValid,
+      lMin,
+      lMax,
+    );
+    lMin = l.min;
+    lMax = l.max;
+    const r = sideCells(
+      f.right_hand_openness_raw,
+      f.right_hand_openness_filtered,
+      rValid,
+      rMin,
+      rMax,
+    );
+    rMin = r.min;
+    rMax = r.max;
+    return [...l.cells, ...r.cells];
+  });
+
+  return { header, cells };
+}
+
+function buildRunningColumns(
+  mode: GameMode,
+  frames: readonly EnrichedFrameRow[],
+): RunningColumns {
+  return mode === 'fingers'
+    ? buildOpennessRunningColumns(frames)
+    : buildAngleRunningColumns(frames);
+}
 
 // ─── CSV primitives ──────────────────────────────────────────
 /** RFC-4180-style escape: wrap in quotes if the value contains comma/quote/newline. */
@@ -148,8 +290,16 @@ export function buildFrameCsv(
   frames: readonly EnrichedFrameRow[]
 ): string {
   const commentLines = metadataCommentLines(exercise, meta);
-  const header = [...FRAME_HEADER_BASE, ...buildDetectorHeader(exercise.activeDetectors)];
-  const rows = frames.map((f) => [
+  // Mode-specific running ROM columns (angle_* for elbow/wrist,
+  // hand_openness_* for fingers). Appended after the base + detector
+  // columns so existing column positions are untouched.
+  const running = buildRunningColumns(exercise.mode, frames);
+  const header = [
+    ...FRAME_HEADER_BASE,
+    ...buildDetectorHeader(exercise.activeDetectors),
+    ...running.header,
+  ];
+  const rows = frames.map((f, i) => [
     f.frame_idx,
     f.timestamp_ms,
     f.active_side ?? '',
@@ -164,6 +314,7 @@ export function buildFrameCsv(
     f.right_frame_status,
     f.right_anomaly_flag,
     ...buildDetectorRow(f, exercise.activeDetectors),
+    ...running.cells[i],
   ]);
   const body = rowsToCsv(header, rows);
   return `${commentLines.join('\n')}\n${body}\n`;
@@ -227,6 +378,15 @@ const SUMMARY_HEADER = [
   'app_version',
   'view_orientation',
   'target_rom',
+  // v1.32 additive columns (functional hand-openness + rep placeholders).
+  'left_hand_openness_min',
+  'left_hand_openness_max',
+  'left_functional_hand_rom',
+  'right_hand_openness_min',
+  'right_hand_openness_max',
+  'right_functional_hand_rom',
+  'rep_count',
+  'mean_rom_per_rep',
 ] as const;
 
 function summaryToRow(s: TrialSummary): readonly (string | number | null)[] {
@@ -284,6 +444,14 @@ function summaryToRow(s: TrialSummary): readonly (string | number | null)[] {
     s.app_version,
     s.view_orientation,
     s.target_rom,
+    s.left_hand_openness_min,
+    s.left_hand_openness_max,
+    s.left_functional_hand_rom,
+    s.right_hand_openness_min,
+    s.right_hand_openness_max,
+    s.right_functional_hand_rom,
+    s.rep_count,
+    s.mean_rom_per_rep,
   ];
 }
 

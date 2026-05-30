@@ -2,6 +2,10 @@
 export type GameMode = 'elbow' | 'wrist' | 'fingers';
 export type ElbowSide = 'L' | 'R' | null;
 
+/** Coarse hand state for fist-making / finger-extension, derived from the
+ *  functional hand-openness percent via hysteresis thresholds. */
+export type HandOpenState = 'open' | 'closed' | 'transition';
+
 // ─── Tracking State ───────────────────────────────────────────
 export interface ElbowState {
   smoothedAngle: number | null;
@@ -35,6 +39,9 @@ export interface ElbowState {
 export interface HandTrackingState {
   smoothedWristExtensionDeg: number | null;
   peakWristExtensionDeg: number | null;
+  /** v1.32: running min of the smoothed wrist angle (since state reset).
+   *  Paired with peak (= max) to show live wrist ROM = peak − min. */
+  minWristExtensionDeg: number | null;
   smoothedOpenHandScore: number | null;
   peakOpenHandScore: number | null;
   // Research-only: raw pre-EMA values + presence indicator (this frame).
@@ -56,6 +63,23 @@ export interface HandTrackingState {
   spreadIndexMiddle: number | null;
   spreadMiddleRing: number | null;
   spreadRingPinky: number | null;
+  // ─── v1.32: functional hand-openness (fist making / finger extension) ──
+  // FUNCTIONAL openness metric (not a precise anatomical finger-joint
+  // measurement). palmCenter = avg(MCP 5,9,13,17); palmSize = dist(0,9);
+  // raw = mean over tips {8,12,16,20} of dist(tip,palmCenter)/palmSize.
+  /** Raw palm-center openness ratio (unsmoothed). Larger = more open. */
+  handOpennessRaw: number | null;
+  /** EMA-smoothed openness ratio. */
+  handOpennessSmoothed: number | null;
+  /** Running min/max of the smoothed ratio observed since this state was
+   *  created (mode switch / session reset). Drives the live percent. */
+  handOpennessMin: number | null;
+  handOpennessMax: number | null;
+  /** Live dynamic percent: (smoothed − min)/(max − min) × 100, clamped
+   *  0–100. Null until at least two distinct values seen. */
+  handOpennessPercent: number | null;
+  /** open / closed / transition from the percent (hysteresis thresholds). */
+  handState: HandOpenState | null;
 }
 
 export interface TrackingState {

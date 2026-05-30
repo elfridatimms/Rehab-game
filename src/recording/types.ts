@@ -91,6 +91,13 @@ export interface FrameRow {
   right_raw: number | null;
   right_filtered: number | null;
   right_visibility: number | null;
+  // ─── v1.32: functional hand-openness (fingers mode only; null else) ──
+  // Raw + EMA-smoothed palm-center openness ratio. Percent / state /
+  // running min/max/ROM are derived post-hoc per trial in csvExport.
+  left_hand_openness_raw: number | null;
+  left_hand_openness_filtered: number | null;
+  right_hand_openness_raw: number | null;
+  right_hand_openness_filtered: number | null;
 }
 
 export type SideKey = 'left' | 'right';
@@ -217,6 +224,22 @@ export interface TrialSummary {
   /** v1.10: clinical target ROM as a string (carried verbatim from
    *  exercise registry, for analysis convenience). */
   target_rom: string;
+
+  // ─── v1.32: functional hand-openness (fingers mode) ───────────
+  // Functional whole-hand openness metric (NOT an anatomical finger
+  // angle). Min/max are of the smoothed palm-center openness ratio over
+  // clean frames; functional_hand_rom = max − min. Null for angle modes.
+  left_hand_openness_min: number | null;
+  left_hand_openness_max: number | null;
+  left_functional_hand_rom: number | null;
+  right_hand_openness_min: number | null;
+  right_hand_openness_max: number | null;
+  right_functional_hand_rom: number | null;
+  // ─── v1.32: rep counting (placeholders — rep counting lands later) ──
+  /** Repetition count for the trial. 0 until rep counting is implemented. */
+  rep_count: number;
+  /** Mean ROM per repetition. Null until rep counting is implemented. */
+  mean_rom_per_rep: number | null;
 }
 
 // ─── Live recorder status ────────────────────────────────────

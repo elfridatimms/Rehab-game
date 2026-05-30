@@ -14,6 +14,7 @@ export function createHandState(): HandTrackingState {
   return {
     smoothedWristExtensionDeg: null,
     peakWristExtensionDeg: null,
+    minWristExtensionDeg: null,
     smoothedOpenHandScore: null,
     peakOpenHandScore: null,
     rawWristExtensionDeg: null,
@@ -27,6 +28,13 @@ export function createHandState(): HandTrackingState {
     spreadIndexMiddle: null,
     spreadMiddleRing: null,
     spreadRingPinky: null,
+    // v1.32: functional hand-openness (fist making / finger extension).
+    handOpennessRaw: null,
+    handOpennessSmoothed: null,
+    handOpennessMin: null,
+    handOpennessMax: null,
+    handOpennessPercent: null,
+    handState: null,
   };
 }
 
@@ -104,6 +112,12 @@ export function updateWristExtension(
     state.smoothedWristExtensionDeg > state.peakWristExtensionDeg
   ) {
     state.peakWristExtensionDeg = state.smoothedWristExtensionDeg;
+  }
+  if (
+    state.minWristExtensionDeg === null ||
+    state.smoothedWristExtensionDeg < state.minWristExtensionDeg
+  ) {
+    state.minWristExtensionDeg = state.smoothedWristExtensionDeg;
   }
 
   return state;

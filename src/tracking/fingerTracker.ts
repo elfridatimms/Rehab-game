@@ -1,8 +1,12 @@
-import type { Landmark, HandTrackingState } from '../types';
+import type { Landmark, HandTrackingState, HandOpenState } from '../types';
 import {
   FINGER_RATIO_CLOSED,
   FINGER_RATIO_OPEN,
   FINGER_SMOOTHING_FACTOR,
+  HAND_OPENNESS_SMOOTHING_FACTOR,
+  HAND_OPEN_THRESHOLD,
+  HAND_CLOSED_THRESHOLD,
+  PALM_SIZE_MIN,
   CAMERA_ASPECT_W_OVER_H,
 } from './constants';
 
@@ -10,6 +14,14 @@ import {
 function ema(raw: number, prev: number | null): number {
   if (prev === null) return raw;
   return raw * FINGER_SMOOTHING_FACTOR + prev * (1 - FINGER_SMOOTHING_FACTOR);
+}
+
+function emaOpenness(raw: number, prev: number | null): number {
+  if (prev === null) return raw;
+  return (
+    raw * HAND_OPENNESS_SMOOTHING_FACTOR +
+    prev * (1 - HAND_OPENNESS_SMOOTHING_FACTOR)
+  );
 }
 
 // ─── Distance / angle helpers ─────────────────────────────────
@@ -36,6 +48,21 @@ function angleAt(v: Landmark, a: Landmark, b: Landmark): number {
 }
 
 const FINGERTIPS = [4, 8, 12, 16, 20];
+
+// Palm center is the average of the four finger MCP joints; the openness
+// metric uses the four (non-thumb) fingertips. Thumb is intentionally
+// excluded — its different anatomy skews the simple average.
+const PALM_MCPS = [5, 9, 13, 17];
+const OPENNESS_TIPS = [8, 12, 16, 20];
+
+/** Classify the hand-openness percent into a coarse state with hysteresis
+ *  thresholds. */
+function classifyHandState(percent: number | null): HandOpenState | null {
+  if (percent === null || !Number.isFinite(percent)) return null;
+  if (percent > HAND_OPEN_THRESHOLD) return 'open';
+  if (percent < HAND_CLOSED_THRESHOLD) return 'closed';
+  return 'transition';
+}
 
 /**
  * Hand openness — exact restore of the deployed formula
@@ -114,6 +141,97 @@ export function updateFingerOpenness(
   }
 
   updateFingerSpreads(state, handLandmarks);
+  return state;
+}
+
+/**
+ * Functional hand-openness (fist making / finger extension).
+ *
+ * This is a FUNCTIONAL openness metric, NOT a precise anatomical
+ * measurement of individual finger joints. It measures how open or
+ * closed the whole hand is, normalised by palm size so it is roughly
+ * invariant to camera distance.
+ *
+ *   palmCenter = average(MCP 5, 9, 13, 17)        // x,y only (no z)
+ *   palmSize   = dist(wrist 0, middle-MCP 9)
+ *   raw        = mean over tips {8,12,16,20} of
+ *                  dist(tip, palmCenter) / palmSize
+ *
+ * The thumb (tip 4) is intentionally excluded — its different anatomy
+ * would distort the simple average.
+ *
+ * `raw` grows as the hand opens and shrinks as it closes. We EMA-smooth
+ * it, track the running min/max observed since this state was created,
+ * and derive a DYNAMIC percent: 0 % = the most-closed value seen so far,
+ * 100 % = the most-open. State is then open / closed / transition.
+ *
+ * Invalid frame (returns with raw/smoothed null, running stats untouched):
+ *   - fewer than 21 landmarks
+ *   - any required landmark (0,5,8,9,12,13,16,17,20) missing
+ *   - palmSize below PALM_SIZE_MIN (hand too small / collapsed)
+ */
+export function updateHandOpenness(
+  state: HandTrackingState,
+  handLandmarks: Landmark[] | undefined,
+): HandTrackingState {
+  const invalid = () => {
+    state.handOpennessRaw = null;
+    state.handOpennessSmoothed = null;
+    state.handOpennessPercent = null;
+    state.handState = null;
+    return state;
+  };
+
+  if (!handLandmarks || handLandmarks.length < 21) return invalid();
+  for (const idx of [0, ...PALM_MCPS, ...OPENNESS_TIPS]) {
+    if (!handLandmarks[idx]) return invalid();
+  }
+
+  const wrist = handLandmarks[0];
+  const middleMCP = handLandmarks[9];
+  const palmSize = dist(wrist, middleMCP);
+  if (!Number.isFinite(palmSize) || palmSize < PALM_SIZE_MIN) return invalid();
+
+  // Palm center = mean of the four MCP joints (x,y only).
+  let cx = 0;
+  let cy = 0;
+  for (const idx of PALM_MCPS) {
+    cx += handLandmarks[idx].x;
+    cy += handLandmarks[idx].y;
+  }
+  const palmCenter: Landmark = {
+    x: cx / PALM_MCPS.length,
+    y: cy / PALM_MCPS.length,
+    z: 0,
+  };
+
+  let sum = 0;
+  for (const tip of OPENNESS_TIPS) {
+    sum += dist(handLandmarks[tip], palmCenter) / palmSize;
+  }
+  const raw = sum / OPENNESS_TIPS.length;
+
+  state.handOpennessRaw = raw;
+  const smoothed = emaOpenness(raw, state.handOpennessSmoothed);
+  state.handOpennessSmoothed = smoothed;
+
+  // Running observed extremes (since state creation: mode switch / reset).
+  state.handOpennessMin =
+    state.handOpennessMin === null ? smoothed : Math.min(state.handOpennessMin, smoothed);
+  state.handOpennessMax =
+    state.handOpennessMax === null ? smoothed : Math.max(state.handOpennessMax, smoothed);
+
+  // Dynamic percent against the observed range. Null until the range opens
+  // up (avoids divide-by-zero on the first / constant frames).
+  const span = (state.handOpennessMax ?? 0) - (state.handOpennessMin ?? 0);
+  if (span > 1e-6) {
+    const pct = ((smoothed - (state.handOpennessMin as number)) / span) * 100;
+    state.handOpennessPercent = Math.max(0, Math.min(100, pct));
+  } else {
+    state.handOpennessPercent = null;
+  }
+  state.handState = classifyHandState(state.handOpennessPercent);
+
   return state;
 }
 

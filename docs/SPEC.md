@@ -172,3 +172,82 @@ Wrist mode runs **hands-only** (`hands` model kind in
   between L and R for the same physical hand.
 - **Vertex dot:** wrist (cyan).
 - **Numeric label:** the angle in degrees, drawn near the wrist.
+
+---
+
+## Functional hand openness (active mode: `fingers`)
+
+Used for **fist making** and **finger extension**. This is a
+**functional** whole-hand openness metric, **NOT** a precise
+anatomical measurement of individual finger joints.
+
+### Landmarks (MediaPipe Hands only)
+
+| Joint | Index |
+|---|---|
+| Wrist root | `0` |
+| Finger MCPs (palm center) | `5, 9, 13, 17` |
+| Middle MCP (palm size) | `9` |
+| Fingertips (no thumb) | `8, 12, 16, 20` |
+
+The thumb tip (`4`) is intentionally excluded — its different anatomy
+distorts the simple average.
+
+### Formula
+
+```
+palmCenter = average(landmark[5], 9, 13, 17)      // x,y only (no z)
+palmSize   = dist(landmark[0], landmark[9])        // aspect-corrected
+raw        = mean over tips {8,12,16,20} of
+               dist(tip, palmCenter) / palmSize
+```
+
+`raw` grows as the hand opens, shrinks as it closes. `x` distances are
+scaled by `CAMERA_ASPECT_W_OVER_H` (= 4/3). Frame is invalid (metric
+null) if fewer than 21 landmarks, any of {0,5,8,9,12,13,16,17,20}
+missing, or `palmSize < PALM_SIZE_MIN`.
+
+### Smoothing & dynamic percent
+
+- EMA with `HAND_OPENNESS_SMOOTHING_FACTOR = 0.3` → `hand_openness_filtered`.
+- Running min/max of the smoothed ratio are tracked since state reset.
+- `hand_openness_percent = (filtered − min)/(max − min) × 100`, clamped
+  0–100. **Dynamic / self-calibrating**: 0 % = most-closed seen, 100 % =
+  most-open seen. Null until the range opens up.
+- `fist_closure_percent = 100 − hand_openness_percent`.
+
+### Hand state (hysteresis)
+
+| State | Condition |
+|---|---|
+| `open` | percent > `HAND_OPEN_THRESHOLD` (75) |
+| `closed` | percent < `HAND_CLOSED_THRESHOLD` (35) |
+| `transition` | otherwise |
+
+### Functional ROM
+
+`functional_hand_rom = hand_openness_max − hand_openness_min` over the
+trial's clean frames (anomaly_flag = 0). It is a **ratio**, not a
+degree value — never displayed with `°`.
+
+### Rep counting
+
+Not yet implemented. `rep_count` = 0 and `mean_rom_per_rep` = empty in
+the CSV until it lands.
+
+### Relationship to the legacy openness score
+
+The older deploy openness score (fingertip → **wrist** over 5 tips,
+fixed 1.4/2.6 calibration, 0–100) is still computed and written to the
+legacy `left_raw`/`left_filtered` frame columns for backward
+compatibility, and shown as a small "Score (legacy)" stat. The new
+functional metric is the headline UI value and lives in the dedicated
+`hand_openness_*` columns.
+
+### Overlay (game/fingers/FingersOverlay.ts)
+
+- Raw MediaPipe Hands skeleton, grey underlay.
+- Palm-center dot (side colour).
+- Lines from palm center to the four fingertips (8,12,16,20) — the
+  exact segments that feed the metric.
+- Big `hand_openness_percent` label + caption (`state · ROM`).
