@@ -87,54 +87,60 @@ convention above (fully extended ≈ 180).
 
 ## Wrist angle (active mode: `wrist`)
 
-### Landmarks (MediaPipe Hands only — no Pose)
+### Landmarks (per side)
 
-| Joint | Index |
-|---|---|
-| Wrist root | `0` |
-| Middle-finger MCP | `9` |
+| Joint | Source | Index |
+|---|---|---|
+| Elbow (forearm side) | MediaPipe Pose | `13` (L) / `14` (R) |
+| Wrist (vertex) | MediaPipe Hands | `0` |
+| Middle MCP (hand side) | MediaPipe Hands | `9` |
 
-Both hands are handled **independently**: each hand has its own state
-and either can be entirely out of frame without affecting the other.
-A single visible hand works — there is no requirement to have both
-hands in the picture.
+Both hands are handled **independently**: each hand has its own
+state and either can be entirely out of frame without affecting the
+other. A single visible hand works.
 
 Vertex of the angle is the **wrist**.
 
-### Formula — hands-only, horizontal-forearm assumption
+### Formula — identical to elbow
 
 ```
-n = (mcp.x − wrist.x) * CAMERA_ASPECT_W_OVER_H    // horizontal component
-i =  wrist.y − mcp.y                              // vertical (image-y is flipped,
-                                                   //  so larger raw y = lower on screen)
-
-angle = 90 + atan2(i, |n|) * 180 / π              // 0..180
+A  = (elbow − wrist) * aspect-corrected   // forearm side
+B  = (mcp   − wrist) * aspect-corrected   // hand side
+dot      = A · B
+interior = acos(dot / (|A| · |B|)) * 180 / π     // 0..180
+flexion  = 180 − interior                        // clinical convention
 ```
 
-`x` is scaled by `CAMERA_ASPECT_W_OVER_H` (= 4/3) so the two
-components are in the same pixel unit. Using `|n|` collapses the
-hand's left/right orientation so the formula works the same for
-either hand and for either screen position — only the vertical
-bend drives the output.
+`x` components scaled by `CAMERA_ASPECT_W_OVER_H` (= 4/3) so x and
+y are in the same pixel unit. Exactly the same shape as the elbow
+formula, just with `wrist → elbow` and `wrist → MCP` as the two
+vectors instead of `elbow → shoulder` and `elbow → wrist`.
 
 ### Range
 
 | Reading | Pose |
 |---|---|
-| **0°** | Hand pointing fully DOWN — max flexion |
-| **90°** | Hand pointing HORIZONTAL — neutral (aligned with forearm) |
-| **180°** | Hand pointing fully UP — max extension |
+| **0°** | Wrist STRAIGHT — hand continues forearm (any orientation) |
+| **~90°** | Wrist bent perpendicular to forearm |
+| **180°** | Wrist folded back parallel to forearm (rare anatomically) |
 
-### Model / pose limitation (literal, do not change)
+Because the angle is measured against the **forearm direction**
+(not against a fixed canvas axis), the user can hold the arm
+sideways, vertical, diagonal — the neutral straight pose always
+reads ~0.
 
-- Hands-only formula. There is NO forearm tracking — `n` and `i` are
-  measured against the canvas axes, not against the user's forearm.
-- Valid only while the forearm is held roughly **horizontal in the
-  camera plane** (sideways flex/extend exercises). A tilted or
-  vertical forearm (e.g. prayer stretch) will still produce a
-  number, but its interpretation as wrist flex/extend is wrong.
-- Prayer-stretch / vertical-forearm exercises are intentionally
-  unsupported by this mode.
+### Visibility / framing
+
+- Wrist (lm0) and middle-finger MCP (lm9) must be present.
+- Elbow landmark (Pose) must be present.
+- **No elbow visibility gate.** A low-visibility elbow is still used.
+  Gating it out broke single-hand exercises whenever the body was
+  partially occluded behind a desk or arm; the angle would null out
+  every other frame. Trade-off: when the elbow is genuinely missing,
+  the formula reads garbage rather than null — but that case is rare,
+  and the alternative was strictly worse.
+- If hand landmarks or Pose results are absent the per-hand smoothed
+  value is set to `null` and the overlay does not draw for that hand.
 
 ### Smoothing
 
@@ -142,13 +148,10 @@ EMA with `WRIST_SMOOTHING_FACTOR = 0.7` on the per-hand value
 (heavier than the elbow's 0.3 — the wrist signal is shorter-baseline
 and noisier, so we trust the new sample less).
 
-### Visibility / framing
+### Model loading
 
-- Wrist (lm0) and middle-finger MCP (lm9) must be present.
-- If either is missing the per-hand smoothed value is set to `null`
-  and the overlay does not draw for that hand.
-- MediaPipe Hands has no per-landmark visibility score, so the gate
-  is simply "are the landmarks there?".
+Wrist mode loads **Pose alongside Hands** (`pose+hands` model kind
+in `useTracking.ts`). Fingers mode stays hands-only.
 
 ### Overlay drawing (game/wrist/WristOverlay.ts)
 
@@ -160,6 +163,3 @@ and noisier, so we trust the new sample less).
   hands are close or only one is in frame).
 - **Vertex dot:** wrist (cyan).
 - **Numeric label:** the angle in degrees, drawn near the wrist.
-- The active line and the number derive from the **same** Hands
-  landmark indices (lm0 and lm9) that feed the angle formula, so
-  the visual line and the number cannot disagree.

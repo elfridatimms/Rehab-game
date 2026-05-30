@@ -89,18 +89,20 @@ function createInitialState(): TrackingState {
 }
 
 // ─── Per-mode model factories ────────────────────────────────
-// v1.29: wrist mode back to HANDS-ONLY (Pose dropped). Running two
-// models in parallel was slowing hand detection — especially with
-// single-hand exercises, where the Pose pass added latency without
-// giving information the simple horizontal-forearm wrist formula needs.
-// Prayer-stretch / vertical-forearm exercises are not supported by
-// this mode (intentionally — the wrist tracker now assumes a roughly
-// horizontal forearm and measures pure flexion / extension).
+// v1.30: wrist mode is back to pose+hands. Pose is needed to know
+// where the elbow is so the wrist angle has a reference forearm —
+// without it, "neutral" reads 90 only when the forearm is horizontal,
+// which broke as soon as the user held their hand vertically. The
+// single-hand bug we hit earlier was NOT caused by Pose itself; it
+// was the strict elbow-visibility gate in wristTracker that nulled
+// the angle whenever the body was partially occluded. That gate has
+// been removed — a low-vis elbow is still used. Fingers mode stays
+// hands-only.
 type ModelKind = 'pose' | 'hands' | 'pose+hands';
 
 function modelKindForMode(mode: GameMode): ModelKind {
   if (mode === 'elbow') return 'pose';
-  // wrist + fingers both go through hands-only.
+  if (mode === 'wrist') return 'pose+hands';
   return 'hands';
 }
 
@@ -308,11 +310,13 @@ export function useTracking(activeMode: GameMode, frameListenerRef?: FrameListen
       updateElbow(s.elbow, results.poseLandmarks, results.poseWorldLandmarks);
       updateForearmRotation(s.elbow, results.poseLandmarks);
     } else {
-      // wrist + fingers: hands-only. Wrist uses a horizontal-forearm
-      // assumption (sideways flex/extend exercises) and works on a
-      // single hand — the other hand may be entirely out of frame.
-      updateWristExtension(s.leftHand, results.leftHandLandmarks);
-      updateWristExtension(s.rightHand, results.rightHandLandmarks);
+      // wrist uses Pose's elbow + Hands' wrist & MCP so the angle is
+      // measured relative to the forearm (neutral=0 in any forearm
+      // orientation). Fingers is hands-only — the per-frame call falls
+      // through to null when no Pose is loaded, which is the correct
+      // behaviour in fingers mode anyway.
+      updateWristExtension(s.leftHand, results.leftHandLandmarks, results.poseLandmarks, 'left');
+      updateWristExtension(s.rightHand, results.rightHandLandmarks, results.poseLandmarks, 'right');
       updateFingerOpenness(s.leftHand, results.leftHandLandmarks);
       updateFingerOpenness(s.rightHand, results.rightHandLandmarks);
     }
