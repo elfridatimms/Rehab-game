@@ -10,8 +10,12 @@ import type { HolisticResults, TrackingState, Landmark } from '../../types';
 const COLORS = {
   skeleton: 'rgba(180, 180, 180, 0.45)',
   reference: 'rgba(180, 180, 180, 0.85)',
-  activeLeft: '#22d3ee',
-  activeRight: '#f472b6',
+  // Single colour for both hands. MediaPipe Hands handedness flickers
+  // between Left/Right when the two hands are close (prayer stretch)
+  // or only one is in frame — using separate L/R colours made the
+  // same physical hand briefly alternate cyan/pink. One colour
+  // sidesteps it.
+  active: '#22d3ee',
   text: '#ffffff',
   textBg: 'rgba(0, 0, 0, 0.65)',
 };
@@ -94,16 +98,8 @@ export function drawWristOverlay(
   const h = canvas.height;
 
   const hands = [
-    {
-      landmarks: results.leftHandLandmarks,
-      handState: state.leftHand,
-      activeColor: COLORS.activeLeft,
-    },
-    {
-      landmarks: results.rightHandLandmarks,
-      handState: state.rightHand,
-      activeColor: COLORS.activeRight,
-    },
+    { landmarks: results.leftHandLandmarks, handState: state.leftHand },
+    { landmarks: results.rightHandLandmarks, handState: state.rightHand },
   ];
 
   ctx.lineCap = 'round';
@@ -125,14 +121,16 @@ export function drawWristOverlay(
     const [mx, my] = toCanvas(mcp, w, h);
 
     // Active wrist→MCP (the hand vector that feeds the angle formula).
-    ctx.strokeStyle = hand.activeColor;
+    // Single colour for both hands to avoid the cyan/pink flicker
+    // caused by MediaPipe Hands handedness flipping between frames.
+    ctx.strokeStyle = COLORS.active;
     ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.moveTo(wx, wy);
     ctx.lineTo(mx, my);
     ctx.stroke();
 
-    ctx.fillStyle = hand.activeColor;
+    ctx.fillStyle = COLORS.active;
     ctx.beginPath();
     ctx.arc(wx, wy, 6, 0, Math.PI * 2);
     ctx.fill();
