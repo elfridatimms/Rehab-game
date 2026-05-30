@@ -160,8 +160,12 @@ function createHands(): ModelHandle {
     // misses landmarks on partial hand views and produces the noise the
     // user observed.
     modelComplexity: 1,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5,
+    // v1.28: lowered from 0.5 to 0.3 so MediaPipe Hands keeps detecting
+    // the hand when two hands are pressed together (prayer stretch /
+    // wrist stretch). At 0.5 the model rejected the partially-occluded
+    // hand outright.
+    minDetectionConfidence: 0.3,
+    minTrackingConfidence: 0.3,
   });
   let currentHandler: ((r: HolisticResults) => void) | null = null;
   hands.onResults((raw: RawHandsResults) => {
@@ -202,8 +206,11 @@ function createPoseAndHands(): ModelHandle {
   hands.setOptions({
     maxNumHands: 2,
     modelComplexity: 1,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5,
+    // v1.28: same lower confidences as hands-only setup so pressed-
+    // together hands stay detected in prayer-stretch / wrist-stretch
+    // poses.
+    minDetectionConfidence: 0.3,
+    minTrackingConfidence: 0.3,
   });
 
   let latestPose: HolisticResults = {};
