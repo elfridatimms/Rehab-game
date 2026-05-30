@@ -11,10 +11,9 @@ import type { EnrichedFrameRow, FrameRow, FrameStatus, SideKey } from './types';
 /** Anatomically plausible range per mode (inclusive). */
 export const PLAUSIBLE_RANGE: Record<GameMode, { min: number; max: number }> = {
   elbow: { min: 0, max: 180 },
-  // v1.24: wrist is back to the deploy signed convention. Neutral
-  // horizontal = 0, extension up = +90, flexion down = −90. Margin
-  // to ±100 absorbs noise.
-  wrist: { min: -100, max: 100 },
+  // v1.25: wrist on 0..180 scale, neutral horizontal = 90,
+  // bent UP → 180, bent DOWN → 0.
+  wrist: { min: 0, max: 180 },
   fingers: { min: 0, max: 100 },
 };
 
@@ -272,10 +271,11 @@ export interface SideRawPeaks {
 /**
  * "Peak" of the raw signal.
  *   elbow / fingers: unsigned, peak = max(raw).
- *   wrist: signed deflection from horizontal (range −90…+90). Peak =
- *          frame with the largest |raw|. Reported value is the signed
- *          reading at that frame so "hand-up" vs "hand-down" can be
- *          told apart post-hoc.
+ *   wrist: 0..180 with neutral=90. Peak = the frame whose value is
+ *          furthest from 90 (max deflection in either direction).
+ *          Reported value is the raw reading at that frame so
+ *          "bent up" (>90) vs "bent down" (<90) can be told apart
+ *          post-hoc.
  */
 export function computeRawPeak(
   mode: GameMode,
@@ -287,13 +287,13 @@ export function computeRawPeak(
   let peakClean: number | null = null;
   let peakCleanRef = -Infinity;
 
-  const signedMag = mode === 'wrist';
+  const wristMode = mode === 'wrist';
 
   for (const f of enriched) {
     const raw = side === 'left' ? f.left_raw : f.right_raw;
     if (raw === null || !Number.isFinite(raw)) continue;
     const flag = side === 'left' ? f.left_anomaly_flag : f.right_anomaly_flag;
-    const cmp = signedMag ? Math.abs(raw) : raw;
+    const cmp = wristMode ? Math.abs(raw - 90) : raw;
 
     if (cmp > peakAllRef) {
       peakAllRef = cmp;

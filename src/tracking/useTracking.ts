@@ -1,7 +1,11 @@
 import { useRef, useCallback, useState, useEffect } from 'react';
 import type { TrackingState, GameMode, HolisticResults, Landmark } from '../types';
 import { createElbowState, updateElbow, updateForearmRotation } from './elbowTracker';
-import { createHandState, updateWristExtension, updateWrist3D } from './wristTracker';
+import {
+  createHandState,
+  updateWristExtension,
+  updateWristForearmInterior,
+} from './wristTracker';
 import { updateFingerOpenness } from './fingerTracker';
 
 /** Per-frame listener invoked after trackers update. Used by the research
@@ -310,12 +314,13 @@ export function useTracking(activeMode: GameMode, frameListenerRef?: FrameListen
       updateFingerOpenness(s.leftHand, results.leftHandLandmarks);
       updateFingerOpenness(s.rightHand, results.rightHandLandmarks);
 
-      // In wrist mode, Pose also drives the unsigned 3D wrist deviation
-      // used by prayer-stretch analysis (separate data path). Fingers
-      // mode doesn't run Pose at all.
+      // v1.25: in wrist mode, Pose's image-plane elbow + Hands wrist
+      // & middle-MCP feed the forearm↔hand interior angle used by
+      // prayer-stretch analysis (separate data path from the main
+      // wrist deflection). Fingers mode doesn't load Pose.
       if (mode === 'wrist') {
-        updateWrist3D(s.leftHand, results.poseWorldLandmarks, 'left');
-        updateWrist3D(s.rightHand, results.poseWorldLandmarks, 'right');
+        updateWristForearmInterior(s.leftHand, results.leftHandLandmarks, results.poseLandmarks, 'left');
+        updateWristForearmInterior(s.rightHand, results.rightHandLandmarks, results.poseLandmarks, 'right');
       }
     }
 

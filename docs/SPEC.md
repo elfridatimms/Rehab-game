@@ -99,17 +99,16 @@ and right.
 
 ### Reference
 
-`0°` is the **horizontal axis** through the wrist landmark — where a
-hand in line with a horizontal forearm sits. The angle is the signed
-deflection of the hand vector (lm0 → lm9) up (extension) or down
-(flexion) from that horizontal.
-
 The wrist exercise assumes the **forearm is held horizontal across
-the image plane** (sideways pose). In that pose:
+the image plane** (sideways pose). On a `0..180` scale matching the
+elbow:
 
-- Hand in line with forearm (horizontal) → **0°** (neutral)
-- Hand bent UP (extension when palm down) → **positive**, up to ~+90°
-- Hand bent DOWN (flexion when palm down) → **negative**, down to ~−90°
+- Hand in line with horizontal forearm → **90°** (neutral, centre)
+- Hand bent UP (extension when palm down) → **→180°**
+- Hand bent DOWN (flexion when palm down) → **→0°**
+
+The signal is continuous through 90 — no reset or fold at the
+boundary as the wrist moves through the full range.
 
 ### Formula
 
@@ -118,7 +117,7 @@ Hand vector goes from the wrist landmark to the middle-finger MCP:
 ```
 n = (mcp.x − wrist.x) * CAMERA_ASPECT_W_OVER_H   // horizontal (aspect-corrected)
 i = wrist.y − mcp.y                              // vertical (screen y inverted)
-angle_deg = atan2(i, |n|) * 180 / π
+angle_deg = 90 + atan2(i, |n|) * 180 / π
 ```
 
 Taking the absolute value of the horizontal component collapses
@@ -126,10 +125,33 @@ left-vs-right and the canvas mirror (`scale(-1, 1)`) into the same
 case, so the formula behaves identically regardless of which hand is
 tracked or how the canvas is displayed.
 
-Range: **−90° … +90°**.
-- `+90` = hand straight up
-- `0`   = hand horizontal (neutral)
-- `−90` = hand straight down
+Range: **0° … 180°**, neutral at 90.
+
+### Secondary: forearm ↔ hand interior angle (prayer stretch)
+
+For exercises where the forearm is NOT horizontal (notably prayer
+stretch — forearms vertical, hands pressed together), the `0..180`
+wrist deflection above isn't meaningful by itself. The overlay also
+shows a second per-hand value `p:Y°` computed in pixel-space from
+Pose's elbow landmark + Hands' wrist & middle-MCP:
+
+```
+forearm = (elbow − wrist) * aspect-corrected
+hand    = (mcp   − wrist) * aspect-corrected
+interior = acos((forearm · hand) / (|forearm| · |hand|)) * 180 / π
+```
+
+For prayer stretch:
+- straight neutral (forearm and hand collinear, both up) → `~0°`
+- wrist bends → interior grows toward 90°
+
+Pose **is** loaded alongside Hands in wrist mode (`pose+hands` model
+kind) specifically so the elbow landmark is available for this
+metric. Pose runs at modelComplexity 0 — minimal overhead.
+
+Stored in `HandTrackingState.rawWrist3DDeg` /
+`smoothedWrist3DDeg` (field names predate the rename to a 2D
+measurement; the value now IS the 2D interior).
 
 ### 2D / model limitation (literal, do not change)
 

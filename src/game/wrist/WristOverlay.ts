@@ -147,10 +147,17 @@ export function drawWristOverlay(
     ctx.arc(wx, wy, 6, 0, Math.PI * 2);
     ctx.fill();
 
-    // Signed display: "+45°" for extension (up), "-30°" for flexion
-    // (down). Neutral horizontal hand reads ~0°.
-    const rounded = Math.round(angle);
-    const sign = rounded > 0 ? '+' : '';
-    drawLabel(ctx, `${sign}${rounded}°`, wx, wy - 18);
+    // Main number: 0..180 scale, neutral horizontal = 90,
+    // bent UP → 180, bent DOWN → 0.
+    drawLabel(ctx, `${Math.round(angle)}°`, wx, wy - 18);
+
+    // Secondary: forearm ↔ hand interior at the wrist (uses Pose
+    // elbow + Hands wrist & MCP). Useful for prayer stretch where
+    // the forearm is vertical and the value reflects how much the
+    // wrist has bent from "straight" (0 at straight, grows with bend).
+    const interior = hand.handState.smoothedWrist3DDeg;
+    if (interior != null) {
+      drawLabel(ctx, `p:${Math.round(interior)}°`, wx, wy + 30, 14);
+    }
   }
 }
