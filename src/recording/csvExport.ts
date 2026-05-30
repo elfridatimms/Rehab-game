@@ -146,13 +146,80 @@ function buildOpennessRunningColumns(
   return { header, cells };
 }
 
-function buildRunningColumns(
-  mode: GameMode,
+function buildSpreadRunningColumns(
   frames: readonly EnrichedFrameRow[],
 ): RunningColumns {
-  return mode === 'fingers'
-    ? buildOpennessRunningColumns(frames)
-    : buildAngleRunningColumns(frames);
+  const sideHeader = (side: 'left' | 'right') => [
+    `${side}_finger_spread_raw`,
+    `${side}_finger_spread_filtered`,
+    `${side}_finger_spread_percent`,
+    `${side}_finger_spread_min`,
+    `${side}_finger_spread_max`,
+    `${side}_finger_spread_rom`,
+  ];
+  const header = [...sideHeader('left'), ...sideHeader('right')];
+
+  let lMin: number | null = null;
+  let lMax: number | null = null;
+  let rMin: number | null = null;
+  let rMax: number | null = null;
+
+  const sideCells = (
+    raw: number | null,
+    filt: number | null,
+    valid: boolean,
+    min: number | null,
+    max: number | null,
+  ): { cells: (string | number | null)[]; min: number | null; max: number | null } => {
+    if (valid && filt !== null && Number.isFinite(filt)) {
+      min = min === null ? filt : Math.min(min, filt);
+      max = max === null ? filt : Math.max(max, filt);
+    }
+    const span = min !== null && max !== null ? max - min : 0;
+    let percent: number | null = null;
+    if (valid && filt !== null && Number.isFinite(filt) && span > 1e-6) {
+      percent = Math.max(0, Math.min(100, ((filt - (min as number)) / span) * 100));
+    }
+    const rom = min !== null && max !== null ? max - min : null;
+    return { cells: [raw, filt, percent, min, max, rom], min, max };
+  };
+
+  const cells = frames.map((f) => {
+    const l = sideCells(
+      f.left_finger_spread_raw,
+      f.left_finger_spread_filtered,
+      f.left_anomaly_flag === 0,
+      lMin,
+      lMax,
+    );
+    lMin = l.min;
+    lMax = l.max;
+    const r = sideCells(
+      f.right_finger_spread_raw,
+      f.right_finger_spread_filtered,
+      f.right_anomaly_flag === 0,
+      rMin,
+      rMax,
+    );
+    rMin = r.min;
+    rMax = r.max;
+    return [...l.cells, ...r.cells];
+  });
+
+  return { header, cells };
+}
+
+function buildRunningColumns(
+  exercise: Exercise,
+  frames: readonly EnrichedFrameRow[],
+): RunningColumns {
+  if (exercise.mode !== 'fingers') return buildAngleRunningColumns(frames);
+  // Fingers: the functional metric depends on the exercise.
+  //   finger_extension → finger SPREAD (how far apart the fingers are)
+  //   fist_making (+others) → hand OPENNESS (open / closed)
+  return exercise.id === 'finger_extension'
+    ? buildSpreadRunningColumns(frames)
+    : buildOpennessRunningColumns(frames);
 }
 
 // ─── CSV primitives ──────────────────────────────────────────
@@ -293,7 +360,7 @@ export function buildFrameCsv(
   // Mode-specific running ROM columns (angle_* for elbow/wrist,
   // hand_openness_* for fingers). Appended after the base + detector
   // columns so existing column positions are untouched.
-  const running = buildRunningColumns(exercise.mode, frames);
+  const running = buildRunningColumns(exercise, frames);
   const header = [
     ...FRAME_HEADER_BASE,
     ...buildDetectorHeader(exercise.activeDetectors),
@@ -385,6 +452,12 @@ const SUMMARY_HEADER = [
   'right_hand_openness_min',
   'right_hand_openness_max',
   'right_functional_hand_rom',
+  'left_finger_spread_min',
+  'left_finger_spread_max',
+  'left_finger_spread_rom',
+  'right_finger_spread_min',
+  'right_finger_spread_max',
+  'right_finger_spread_rom',
   'rep_count',
   'mean_rom_per_rep',
 ] as const;
@@ -450,6 +523,12 @@ function summaryToRow(s: TrialSummary): readonly (string | number | null)[] {
     s.right_hand_openness_min,
     s.right_hand_openness_max,
     s.right_functional_hand_rom,
+    s.left_finger_spread_min,
+    s.left_finger_spread_max,
+    s.left_finger_spread_rom,
+    s.right_finger_spread_min,
+    s.right_finger_spread_max,
+    s.right_finger_spread_rom,
     s.rep_count,
     s.mean_rom_per_rep,
   ];

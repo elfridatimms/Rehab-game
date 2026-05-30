@@ -47,21 +47,39 @@ export const FingersPanel: React.FC<FingersPanelProps> = ({
     prevRightPeak.current = rightHand.peakOpenHandScore;
   }, [rightHand.peakOpenHandScore]);
 
-  // v1.32: headline metric is now the FUNCTIONAL palm-center openness
-  // (dynamic %, 0 = most-closed seen this session, 100 = most-open). The
-  // legacy deploy openness score is kept as a small secondary readout.
-  const leftPct = leftHand.handOpennessPercent;
-  const rightPct = rightHand.handOpennessPercent;
-  const leftState = leftHand.handState;
-  const rightState = rightHand.handState;
-  const leftFnRom =
-    leftHand.handOpennessMax != null && leftHand.handOpennessMin != null
-      ? leftHand.handOpennessMax - leftHand.handOpennessMin
-      : null;
-  const rightFnRom =
-    rightHand.handOpennessMax != null && rightHand.handOpennessMin != null
-      ? rightHand.handOpennessMax - rightHand.handOpennessMin
-      : null;
+  // v1.33: the headline metric depends on the EXERCISE.
+  //   • finger_extension → finger SPREAD (how far apart the fingers are)
+  //   • fist_making (+others) → hand OPENNESS (open / closed)
+  const isSpread = exercise?.id === 'finger_extension';
+  const metricLabel = isSpread ? 'Finger spread' : 'Hand openness';
+
+  const pick = (h: typeof leftHand) =>
+    isSpread
+      ? {
+          pct: h.fingerSpreadPercent,
+          state: null as string | null,
+          rom:
+            h.fingerSpreadMax != null && h.fingerSpreadMin != null
+              ? h.fingerSpreadMax - h.fingerSpreadMin
+              : null,
+        }
+      : {
+          pct: h.handOpennessPercent,
+          state: h.handState as string | null,
+          rom:
+            h.handOpennessMax != null && h.handOpennessMin != null
+              ? h.handOpennessMax - h.handOpennessMin
+              : null,
+        };
+
+  const left = pick(leftHand);
+  const right = pick(rightHand);
+  const leftPct = left.pct;
+  const rightPct = right.pct;
+  const leftState = left.state;
+  const rightState = right.state;
+  const leftFnRom = left.rom;
+  const rightFnRom = right.rom;
   const leftDeploy = leftHand.smoothedOpenHandScore;
   const rightDeploy = rightHand.smoothedOpenHandScore;
 
@@ -81,7 +99,7 @@ export const FingersPanel: React.FC<FingersPanelProps> = ({
             <span>Left hand</span>
           </div>
           <ScoreCard
-            label="Hand openness"
+            label={metricLabel}
             value={leftPct != null ? Math.round(leftPct) : '—'}
             unit="%"
             accent="#34d399"
@@ -91,13 +109,15 @@ export const FingersPanel: React.FC<FingersPanelProps> = ({
             value={leftPct ?? 0}
             color="#10b981"
             colorEnd="#34d399"
-            label="Openness"
-            sublabel={leftState != null ? leftState : 'Waiting...'}
+            label={metricLabel}
+            sublabel={leftState != null ? leftState : isSpread ? 'spread' : 'Waiting...'}
           />
-          <div className="stat-mini">
-            <span className="stat-mini-label">Hand state</span>
-            <span className="stat-mini-value">{leftState ?? '—'}</span>
-          </div>
+          {!isSpread && (
+            <div className="stat-mini">
+              <span className="stat-mini-label">Hand state</span>
+              <span className="stat-mini-value">{leftState ?? '—'}</span>
+            </div>
+          )}
           <div className="stat-mini">
             <span className="stat-mini-label">Functional ROM</span>
             <span className="stat-mini-value best">
@@ -122,7 +142,7 @@ export const FingersPanel: React.FC<FingersPanelProps> = ({
             <span>Right hand</span>
           </div>
           <ScoreCard
-            label="Hand openness"
+            label={metricLabel}
             value={rightPct != null ? Math.round(rightPct) : '—'}
             unit="%"
             accent="#fb923c"
@@ -132,13 +152,15 @@ export const FingersPanel: React.FC<FingersPanelProps> = ({
             value={rightPct ?? 0}
             color="#f97316"
             colorEnd="#fb923c"
-            label="Openness"
-            sublabel={rightState != null ? rightState : 'Waiting...'}
+            label={metricLabel}
+            sublabel={rightState != null ? rightState : isSpread ? 'spread' : 'Waiting...'}
           />
-          <div className="stat-mini">
-            <span className="stat-mini-label">Hand state</span>
-            <span className="stat-mini-value">{rightState ?? '—'}</span>
-          </div>
+          {!isSpread && (
+            <div className="stat-mini">
+              <span className="stat-mini-label">Hand state</span>
+              <span className="stat-mini-value">{rightState ?? '—'}</span>
+            </div>
+          )}
           <div className="stat-mini">
             <span className="stat-mini-label">Functional ROM</span>
             <span className="stat-mini-value best">

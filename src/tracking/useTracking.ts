@@ -2,7 +2,11 @@ import { useRef, useCallback, useState, useEffect } from 'react';
 import type { TrackingState, GameMode, HolisticResults, Landmark } from '../types';
 import { createElbowState, updateElbow, updateForearmRotation } from './elbowTracker';
 import { createHandState, updateWristExtension } from './wristTracker';
-import { updateFingerOpenness, updateHandOpenness } from './fingerTracker';
+import {
+  updateFingerOpenness,
+  updateHandOpenness,
+  updateFingerSpread,
+} from './fingerTracker';
 
 /** Per-frame listener invoked after trackers update. Used by the research
  *  recorder; passed as a ref so the listener can change without re-creating
@@ -313,12 +317,15 @@ export function useTracking(activeMode: GameMode, frameListenerRef?: FrameListen
       updateWristExtension(s.rightHand, results.rightHandLandmarks);
       updateFingerOpenness(s.leftHand, results.leftHandLandmarks);
       updateFingerOpenness(s.rightHand, results.rightHandLandmarks);
-      // v1.32: functional palm-center hand-openness (fist making /
-      // finger extension). Independent of the legacy deploy openness
-      // score above; feeds the new hand_openness_* metric + UI.
+      // v1.32/1.33: two distinct functional finger metrics, both kept
+      // every frame; the UI picks per exercise.
+      //   • hand openness (tip→palm-center)  → FIST MAKING (open/closed)
+      //   • finger spread (adjacent-tip gaps) → FINGER EXTENSION (separation)
       if (mode === 'fingers') {
         updateHandOpenness(s.leftHand, results.leftHandLandmarks);
         updateHandOpenness(s.rightHand, results.rightHandLandmarks);
+        updateFingerSpread(s.leftHand, results.leftHandLandmarks);
+        updateFingerSpread(s.rightHand, results.rightHandLandmarks);
       }
     }
 

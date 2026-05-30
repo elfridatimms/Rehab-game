@@ -35,6 +35,12 @@ export function createHandState(): HandTrackingState {
     handOpennessMax: null,
     handOpennessPercent: null,
     handState: null,
+    // v1.33: finger spread / separation (finger extension).
+    fingerSpreadRaw: null,
+    fingerSpreadSmoothed: null,
+    fingerSpreadMin: null,
+    fingerSpreadMax: null,
+    fingerSpreadPercent: null,
   };
 }
 

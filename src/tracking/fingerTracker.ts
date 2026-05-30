@@ -235,6 +235,76 @@ export function updateHandOpenness(
   return state;
 }
 
+// Adjacent fingertip pairs whose normalised gaps measure spread. Thumb
+// tip (4) → index (8) is included so thumb abduction counts toward
+// "how far apart are the fingers spread".
+const SPREAD_TIP_PAIRS: ReadonlyArray<readonly [number, number]> = [
+  [4, 8],
+  [8, 12],
+  [12, 16],
+  [16, 20],
+];
+
+/**
+ * Finger SPREAD / separation (finger extension exercise).
+ *
+ * Measures how far apart the fingers are spread — distinct from the
+ * openness metric (which is tip-to-palm-center). Here we average the
+ * gaps between adjacent fingertips and normalise by palm size:
+ *
+ *   palmSize = dist(wrist 0, middle-MCP 9)
+ *   raw      = mean over pairs {(4,8),(8,12),(12,16),(16,20)} of
+ *                dist(tipA, tipB) / palmSize
+ *
+ * Larger raw = fingers more separated. EMA-smoothed, with running
+ * min/max and a DYNAMIC percent (0 = least spread seen this session,
+ * 100 = most spread). Same invalid-frame rules as openness.
+ */
+export function updateFingerSpread(
+  state: HandTrackingState,
+  handLandmarks: Landmark[] | undefined,
+): HandTrackingState {
+  const invalid = () => {
+    state.fingerSpreadRaw = null;
+    state.fingerSpreadSmoothed = null;
+    state.fingerSpreadPercent = null;
+    return state;
+  };
+
+  if (!handLandmarks || handLandmarks.length < 21) return invalid();
+  for (const idx of [0, 9, 4, 8, 12, 16, 20]) {
+    if (!handLandmarks[idx]) return invalid();
+  }
+
+  const palmSize = dist(handLandmarks[0], handLandmarks[9]);
+  if (!Number.isFinite(palmSize) || palmSize < PALM_SIZE_MIN) return invalid();
+
+  let sum = 0;
+  for (const [a, b] of SPREAD_TIP_PAIRS) {
+    sum += dist(handLandmarks[a], handLandmarks[b]) / palmSize;
+  }
+  const raw = sum / SPREAD_TIP_PAIRS.length;
+
+  state.fingerSpreadRaw = raw;
+  const smoothed = emaOpenness(raw, state.fingerSpreadSmoothed);
+  state.fingerSpreadSmoothed = smoothed;
+
+  state.fingerSpreadMin =
+    state.fingerSpreadMin === null ? smoothed : Math.min(state.fingerSpreadMin, smoothed);
+  state.fingerSpreadMax =
+    state.fingerSpreadMax === null ? smoothed : Math.max(state.fingerSpreadMax, smoothed);
+
+  const span = (state.fingerSpreadMax ?? 0) - (state.fingerSpreadMin ?? 0);
+  if (span > 1e-6) {
+    const pct = ((smoothed - (state.fingerSpreadMin as number)) / span) * 100;
+    state.fingerSpreadPercent = Math.max(0, Math.min(100, pct));
+  } else {
+    state.fingerSpreadPercent = null;
+  }
+
+  return state;
+}
+
 /** Per-finger spread angles (orthogonal feature, not in the deployed
  *  bundle but kept because the UI still exposes them). */
 function updateFingerSpreads(

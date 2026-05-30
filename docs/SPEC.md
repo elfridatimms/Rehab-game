@@ -175,11 +175,21 @@ Wrist mode runs **hands-only** (`hands` model kind in
 
 ---
 
-## Functional hand openness (active mode: `fingers`)
+## Functional finger metrics (active mode: `fingers`)
 
-Used for **fist making** and **finger extension**. This is a
-**functional** whole-hand openness metric, **NOT** a precise
-anatomical measurement of individual finger joints.
+Two **different** functional metrics, chosen per exercise:
+
+| Exercise | Metric | Question it answers |
+|---|---|---|
+| `fist_making` | hand **openness** | is the hand open or closed? |
+| `finger_extension` | finger **spread** | how far apart are the fingers? |
+
+Both are **functional** whole-hand metrics, **NOT** precise anatomical
+measurements of individual finger joints. Both are computed every frame;
+the UI overlay + panel pick the one matching the active exercise
+(`App.tsx` → `fingersMetric`; `FingersPanel` → `isSpread`).
+
+### Hand openness (fist making)
 
 ### Landmarks (MediaPipe Hands only)
 
@@ -229,6 +239,27 @@ missing, or `palmSize < PALM_SIZE_MIN`.
 `functional_hand_rom = hand_openness_max − hand_openness_min` over the
 trial's clean frames (anomaly_flag = 0). It is a **ratio**, not a
 degree value — never displayed with `°`.
+
+### Finger spread (finger extension)
+
+Measures **how far apart the fingers are spread** — distinct from
+openness (tip-to-palm). Uses the same Hands landmarks plus the thumb
+tip (`4`).
+
+```
+palmSize = dist(landmark[0], landmark[9])            // aspect-corrected
+raw      = mean over pairs {(4,8),(8,12),(12,16),(16,20)} of
+             dist(tipA, tipB) / palmSize
+```
+
+Larger `raw` = fingers more separated. Same EMA (`0.3`), running
+min/max, and **dynamic percent** (0 = least spread seen, 100 = most)
+as openness. `finger_spread_rom = max − min` over clean frames. No
+open/closed state — spread has no binary classification.
+
+Overlay (finger_extension): a fan connecting the fingertips
+(4→8→12→16→20) + the big spread % + ROM caption. Selected via
+`fingersMetric === 'spread'`.
 
 ### Rep counting
 

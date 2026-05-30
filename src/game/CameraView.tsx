@@ -4,12 +4,18 @@ import { drawElbowOverlay } from './elbow/ElbowOverlay';
 import { drawWristOverlay } from './wrist/WristOverlay';
 import { drawFingersOverlay } from './fingers/FingersOverlay';
 
+/** Which functional finger metric the overlay should visualise. Picked
+ *  per exercise: finger_extension → spread, everything else → openness. */
+export type FingersMetric = 'openness' | 'spread';
+
 interface CameraViewProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   rawResultsRef: React.RefObject<HolisticResults | null>;
   trackingStateRef: React.RefObject<TrackingState>;
   activeMode: GameMode;
   isRunning: boolean;
+  /** Fingers-mode overlay metric. Defaults to openness. */
+  fingersMetric?: FingersMetric;
 }
 
 const CameraViewImpl: React.FC<CameraViewProps> = ({
@@ -18,6 +24,7 @@ const CameraViewImpl: React.FC<CameraViewProps> = ({
   trackingStateRef,
   activeMode,
   isRunning,
+  fingersMetric = 'openness',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animRef = useRef<number>(0);
@@ -25,12 +32,16 @@ const CameraViewImpl: React.FC<CameraViewProps> = ({
   // value without being re-installed on every change.
   const activeModeRef = useRef(activeMode);
   const isRunningRef = useRef(isRunning);
+  const fingersMetricRef = useRef(fingersMetric);
   useEffect(() => {
     activeModeRef.current = activeMode;
   }, [activeMode]);
   useEffect(() => {
     isRunningRef.current = isRunning;
   }, [isRunning]);
+  useEffect(() => {
+    fingersMetricRef.current = fingersMetric;
+  }, [fingersMetric]);
 
   // Install the draw loop ONCE. It reads everything via refs, so it does not
   // need to be torn down when results / state / mode update. This avoids the
@@ -77,7 +88,7 @@ const CameraViewImpl: React.FC<CameraViewProps> = ({
           drawWristOverlay(ctx, canvas, rawResults, trackingState);
           break;
         case 'fingers':
-          drawFingersOverlay(ctx, canvas, rawResults, trackingState);
+          drawFingersOverlay(ctx, canvas, rawResults, trackingState, fingersMetricRef.current);
           break;
       }
     };

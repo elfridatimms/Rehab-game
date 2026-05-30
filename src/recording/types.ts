@@ -98,6 +98,11 @@ export interface FrameRow {
   left_hand_openness_filtered: number | null;
   right_hand_openness_raw: number | null;
   right_hand_openness_filtered: number | null;
+  // v1.33: finger SPREAD / separation (finger extension exercise).
+  left_finger_spread_raw: number | null;
+  left_finger_spread_filtered: number | null;
+  right_finger_spread_raw: number | null;
+  right_finger_spread_filtered: number | null;
 }
 
 export type SideKey = 'left' | 'right';
@@ -235,6 +240,13 @@ export interface TrialSummary {
   right_hand_openness_min: number | null;
   right_hand_openness_max: number | null;
   right_functional_hand_rom: number | null;
+  // v1.33: finger SPREAD ROM (finger extension). Null for other modes.
+  left_finger_spread_min: number | null;
+  left_finger_spread_max: number | null;
+  left_finger_spread_rom: number | null;
+  right_finger_spread_min: number | null;
+  right_finger_spread_max: number | null;
+  right_finger_spread_rom: number | null;
   // ─── v1.32: rep counting (placeholders — rep counting lands later) ──
   /** Repetition count for the trial. 0 until rep counting is implemented. */
   rep_count: number;

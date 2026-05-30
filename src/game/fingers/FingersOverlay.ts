@@ -107,11 +107,121 @@ function drawRawHandSkeleton(
   ctx.restore();
 }
 
+/** Which functional finger metric to visualise. */
+export type FingersMetric = 'openness' | 'spread';
+
+// Fingertip fan for the spread overlay: thumb → index → … → pinky.
+const SPREAD_TIP_CHAIN = [4, 8, 12, 16, 20];
+
+/** OPENNESS overlay (fist making): palm-center dot + lines to the four
+ *  fingertips + big openness % and state/ROM caption. */
+function drawOpennessHand(
+  ctx: CanvasRenderingContext2D,
+  hand: Landmark[],
+  hs: TrackingState['leftHand'],
+  color: string,
+  w: number,
+  h: number,
+): void {
+  let cx = 0;
+  let cy = 0;
+  for (const idx of PALM_MCPS) {
+    const [px, py] = toCanvas(hand[idx], w, h);
+    cx += px;
+    cy += py;
+  }
+  cx /= PALM_MCPS.length;
+  cy /= PALM_MCPS.length;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  for (const tip of OPENNESS_TIPS) {
+    if (!hand[tip]) continue;
+    const [tx, ty] = toCanvas(hand[tip], w, h);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  const pct = hs.handOpennessPercent;
+  drawLabel(ctx, pct != null ? `${Math.round(pct)}%` : '—', cx, cy - 26);
+
+  const fnRom =
+    hs.handOpennessMax != null && hs.handOpennessMin != null
+      ? hs.handOpennessMax - hs.handOpennessMin
+      : null;
+  const parts: string[] = [];
+  if (hs.handState) parts.push(hs.handState);
+  if (fnRom != null) parts.push(`ROM ${fnRom.toFixed(2)}`);
+  if (parts.length > 0) drawCaption(ctx, parts.join(' · '), cx, cy + 16);
+}
+
+/** SPREAD overlay (finger extension): a fan connecting the fingertips
+ *  (the gaps that feed the spread metric) + big spread % + ROM caption. */
+function drawSpreadHand(
+  ctx: CanvasRenderingContext2D,
+  hand: Landmark[],
+  hs: TrackingState['leftHand'],
+  color: string,
+  w: number,
+  h: number,
+): void {
+  // Connect adjacent fingertips — the visible "separation" between them.
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  let started = false;
+  for (const tip of SPREAD_TIP_CHAIN) {
+    if (!hand[tip]) { started = false; continue; }
+    const [tx, ty] = toCanvas(hand[tip], w, h);
+    if (!started) { ctx.moveTo(tx, ty); started = true; }
+    else ctx.lineTo(tx, ty);
+  }
+  ctx.stroke();
+
+  // Tip dots + centroid for label placement (over the four fingers).
+  let cx = 0;
+  let cy = 0;
+  let n = 0;
+  ctx.fillStyle = color;
+  for (const tip of OPENNESS_TIPS) {
+    if (!hand[tip]) continue;
+    const [tx, ty] = toCanvas(hand[tip], w, h);
+    ctx.beginPath();
+    ctx.arc(tx, ty, 5, 0, Math.PI * 2);
+    ctx.fill();
+    cx += tx;
+    cy += ty;
+    n++;
+  }
+  if (n === 0) return;
+  cx /= n;
+  cy /= n;
+
+  const pct = hs.fingerSpreadPercent;
+  drawLabel(ctx, pct != null ? `${Math.round(pct)}%` : '—', cx, cy - 30);
+
+  const rom =
+    hs.fingerSpreadMax != null && hs.fingerSpreadMin != null
+      ? hs.fingerSpreadMax - hs.fingerSpreadMin
+      : null;
+  const parts = ['spread'];
+  if (rom != null) parts.push(`ROM ${rom.toFixed(2)}`);
+  drawCaption(ctx, parts.join(' · '), cx, cy + 14);
+}
+
 export function drawFingersOverlay(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   results: HolisticResults,
   state: TrackingState,
+  metric: FingersMetric = 'openness',
 ): void {
   const w = canvas.width;
   const h = canvas.height;
@@ -137,56 +247,14 @@ export function drawFingersOverlay(
     // Always draw the raw hand skeleton underlay.
     drawRawHandSkeleton(ctx, hand.landmarks, w, h);
 
-    // Functional palm-center openness. If we don't have a percent yet
-    // (range not established) we still draw the palm-center geometry.
-    const hs = hand.handState;
+    // Need the required landmarks for whichever metric we draw.
+    const required = metric === 'spread' ? SPREAD_TIP_CHAIN : [...PALM_MCPS, ...OPENNESS_TIPS];
+    if (required.some((idx) => !hand.landmarks![idx])) continue;
 
-    // Palm center = mean of the four MCP joints, in canvas space.
-    let cx = 0;
-    let cy = 0;
-    let ok = true;
-    for (const idx of PALM_MCPS) {
-      const lm = hand.landmarks[idx];
-      if (!lm) { ok = false; break; }
-      const [px, py] = toCanvas(lm, w, h);
-      cx += px;
-      cy += py;
+    if (metric === 'spread') {
+      drawSpreadHand(ctx, hand.landmarks, hand.handState, hand.activeColor, w, h);
+    } else {
+      drawOpennessHand(ctx, hand.landmarks, hand.handState, hand.activeColor, w, h);
     }
-    if (!ok) continue;
-    cx /= PALM_MCPS.length;
-    cy /= PALM_MCPS.length;
-
-    // Lines from palm center to the four (non-thumb) fingertips — the
-    // exact segments whose normalised lengths feed the openness metric.
-    ctx.strokeStyle = hand.activeColor;
-    ctx.lineWidth = 3;
-    for (const tip of OPENNESS_TIPS) {
-      const lm = hand.landmarks[tip];
-      if (!lm) continue;
-      const [tx, ty] = toCanvas(lm, w, h);
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(tx, ty);
-      ctx.stroke();
-    }
-
-    // Palm center marker.
-    ctx.fillStyle = hand.activeColor;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Labels: big openness % + caption with state / functional ROM.
-    const pct = hs.handOpennessPercent;
-    drawLabel(ctx, pct != null ? `${Math.round(pct)}%` : '—', cx, cy - 26);
-
-    const fnRom =
-      hs.handOpennessMax != null && hs.handOpennessMin != null
-        ? hs.handOpennessMax - hs.handOpennessMin
-        : null;
-    const parts: string[] = [];
-    if (hs.handState) parts.push(hs.handState);
-    if (fnRom != null) parts.push(`ROM ${fnRom.toFixed(2)}`);
-    if (parts.length > 0) drawCaption(ctx, parts.join(' · '), cx, cy + 16);
   }
 }

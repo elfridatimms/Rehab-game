@@ -173,6 +173,7 @@ export default function App() {
               trackingStateRef={trackingStateRef}
               activeMode={activeMode}
               isRunning={isRunning}
+              fingersMetric={exercise?.id === 'finger_extension' ? 'spread' : 'openness'}
             />
           </div>
         </main>

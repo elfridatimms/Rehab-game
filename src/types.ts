@@ -80,6 +80,16 @@ export interface HandTrackingState {
   handOpennessPercent: number | null;
   /** open / closed / transition from the percent (hysteresis thresholds). */
   handState: HandOpenState | null;
+  // ─── v1.33: finger SPREAD / separation (finger extension exercise) ──
+  // Mean adjacent-fingertip gap (4-8, 8-12, 12-16, 16-20) normalised by
+  // palm size. Measures how far apart the fingers are spread — distinct
+  // from openness (tip-to-palm). Larger = fingers more separated.
+  fingerSpreadRaw: number | null;
+  fingerSpreadSmoothed: number | null;
+  fingerSpreadMin: number | null;
+  fingerSpreadMax: number | null;
+  /** Dynamic percent: 0 = least spread seen, 100 = most spread seen. */
+  fingerSpreadPercent: number | null;
 }
 
 export interface TrackingState {

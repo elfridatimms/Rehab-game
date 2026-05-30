@@ -89,12 +89,16 @@ export function writeSubjectId(id: string): void {
 
 // ─── Per-mode frame extraction ───────────────────────────────
 function extractFrame(mode: GameMode, s: TrackingState): Omit<FrameRow, 'frame_idx' | 'timestamp_ms'> {
-  // Openness fields are only populated in fingers mode.
-  const noOpenness = {
+  // Openness + spread fields are only populated in fingers mode.
+  const noHandMetrics = {
     left_hand_openness_raw: null,
     left_hand_openness_filtered: null,
     right_hand_openness_raw: null,
     right_hand_openness_filtered: null,
+    left_finger_spread_raw: null,
+    left_finger_spread_filtered: null,
+    right_finger_spread_raw: null,
+    right_finger_spread_filtered: null,
   };
   if (mode === 'elbow') {
     const e = s.elbow;
@@ -107,7 +111,7 @@ function extractFrame(mode: GameMode, s: TrackingState): Omit<FrameRow, 'frame_i
       right_raw: e.rightRaw,
       right_filtered: e.rightSmoothed,
       right_visibility: e.rightVisibility,
-      ...noOpenness,
+      ...noHandMetrics,
     };
   }
   if (mode === 'wrist') {
@@ -119,7 +123,7 @@ function extractFrame(mode: GameMode, s: TrackingState): Omit<FrameRow, 'frame_i
       right_raw: s.rightHand.rawWristExtensionDeg,
       right_filtered: s.rightHand.smoothedWristExtensionDeg,
       right_visibility: s.rightHand.visibility,
-      ...noOpenness,
+      ...noHandMetrics,
     };
   }
   // fingers. left_raw/left_filtered keep the legacy deploy openness score
@@ -137,6 +141,10 @@ function extractFrame(mode: GameMode, s: TrackingState): Omit<FrameRow, 'frame_i
     left_hand_openness_filtered: s.leftHand.handOpennessSmoothed,
     right_hand_openness_raw: s.rightHand.handOpennessRaw,
     right_hand_openness_filtered: s.rightHand.handOpennessSmoothed,
+    left_finger_spread_raw: s.leftHand.fingerSpreadRaw,
+    left_finger_spread_filtered: s.leftHand.fingerSpreadSmoothed,
+    right_finger_spread_raw: s.rightHand.fingerSpreadRaw,
+    right_finger_spread_filtered: s.rightHand.fingerSpreadSmoothed,
   };
 }
 
@@ -168,19 +176,22 @@ function round3(n: number | null): number | null {
   return Math.round(n * 1000) / 1000;
 }
 
-// ─── Functional hand-openness stats (fingers mode) ───────────
-/** Min/max/ROM of the smoothed palm-center openness over CLEAN frames
- *  (anomaly_flag === 0). Functional whole-hand metric — not an anatomical
- *  finger-joint angle. Returns nulls when no clean samples. */
-function computeOpennessStats(
+// ─── Functional hand-metric stats (fingers mode) ─────────────
+/** Min/max/ROM of a smoothed functional hand metric over CLEAN frames
+ *  (anomaly_flag === 0). Used for both palm-center openness (fist making)
+ *  and finger spread (finger extension) — functional whole-hand metrics,
+ *  not anatomical finger-joint angles. Returns nulls when no clean
+ *  samples. */
+function computeHandMetricStats(
   enriched: readonly EnrichedFrameRow[],
   side: 'left' | 'right',
+  pick: (f: EnrichedFrameRow) => number | null,
 ): { min: number | null; max: number | null; rom: number | null } {
   let min: number | null = null;
   let max: number | null = null;
   for (const f of enriched) {
     const flag = side === 'left' ? f.left_anomaly_flag : f.right_anomaly_flag;
-    const v = side === 'left' ? f.left_hand_openness_filtered : f.right_hand_openness_filtered;
+    const v = pick(f);
     if (flag !== 0 || v === null || !Number.isFinite(v)) continue;
     min = min === null ? v : Math.min(min, v);
     max = max === null ? v : Math.max(max, v);
@@ -556,15 +567,23 @@ export function useTrialRecorder(frameListenerRef: FrameListenerRef): {
     const anomalies = countAnomalies(enriched);
     const leftPeak = computeRawPeak(exercise.mode, enriched, 'left');
     const rightPeak = computeRawPeak(exercise.mode, enriched, 'right');
-    // Functional hand-openness ROM (fingers mode only; null for angle modes).
-    const leftOpen =
-      exercise.mode === 'fingers'
-        ? computeOpennessStats(enriched, 'left')
-        : { min: null, max: null, rom: null };
-    const rightOpen =
-      exercise.mode === 'fingers'
-        ? computeOpennessStats(enriched, 'right')
-        : { min: null, max: null, rom: null };
+    // Functional hand-metric ROM (fingers mode only; null for angle modes).
+    // Both openness (fist making) and spread (finger extension) are computed
+    // so each fingers trial carries the column its exercise actually needs.
+    const noStats = { min: null, max: null, rom: null };
+    const isFingers = exercise.mode === 'fingers';
+    const leftOpen = isFingers
+      ? computeHandMetricStats(enriched, 'left', (f) => f.left_hand_openness_filtered)
+      : noStats;
+    const rightOpen = isFingers
+      ? computeHandMetricStats(enriched, 'right', (f) => f.right_hand_openness_filtered)
+      : noStats;
+    const leftSpread = isFingers
+      ? computeHandMetricStats(enriched, 'left', (f) => f.left_finger_spread_filtered)
+      : noStats;
+    const rightSpread = isFingers
+      ? computeHandMetricStats(enriched, 'right', (f) => f.right_finger_spread_filtered)
+      : noStats;
 
     const trialIdx = trialIdxRef.current;
     const filename = buildFrameCsvFilename(
@@ -648,6 +667,12 @@ export function useTrialRecorder(frameListenerRef: FrameListenerRef): {
       right_hand_openness_min: rightOpen.min,
       right_hand_openness_max: rightOpen.max,
       right_functional_hand_rom: rightOpen.rom,
+      left_finger_spread_min: leftSpread.min,
+      left_finger_spread_max: leftSpread.max,
+      left_finger_spread_rom: leftSpread.rom,
+      right_finger_spread_min: rightSpread.min,
+      right_finger_spread_max: rightSpread.max,
+      right_finger_spread_rom: rightSpread.rom,
       rep_count: 0,
       mean_rom_per_rep: null,
     };
