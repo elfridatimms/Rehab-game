@@ -269,31 +269,26 @@ export interface SideRawPeaks {
 }
 
 /**
- * "Peak" of the raw signal.
- *   elbow / fingers: unsigned, peak = max(raw).
- *   wrist: 0..180 with neutral=90. Peak = the frame whose value is
- *          furthest from 90 (max deflection in either direction).
- *          Reported value is the raw reading at that frame so
- *          "bent up" (>90) vs "bent down" (<90) can be told apart
- *          post-hoc.
+ * "Peak" of the raw signal. v1.27: all three modes use the same
+ * convention now — unsigned 0..180 (elbow, wrist) or 0..100
+ * (fingers), with the raw value itself being the amount of bend.
+ * Peak = max(raw).
  */
 export function computeRawPeak(
-  mode: GameMode,
+  _mode: GameMode,
   enriched: readonly EnrichedFrameRow[],
-  side: SideKey
+  side: SideKey,
 ): SideRawPeaks {
   let peakAll: number | null = null;
   let peakAllRef = -Infinity;
   let peakClean: number | null = null;
   let peakCleanRef = -Infinity;
 
-  const wristMode = mode === 'wrist';
-
   for (const f of enriched) {
     const raw = side === 'left' ? f.left_raw : f.right_raw;
     if (raw === null || !Number.isFinite(raw)) continue;
     const flag = side === 'left' ? f.left_anomaly_flag : f.right_anomaly_flag;
-    const cmp = wristMode ? Math.abs(raw - 90) : raw;
+    const cmp = raw;
 
     if (cmp > peakAllRef) {
       peakAllRef = cmp;

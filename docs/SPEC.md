@@ -97,70 +97,72 @@ convention above (fully extended ≈ 180).
 Both hands are handled independently; the same formula applies to left
 and right.
 
-### Reference
+### Landmarks (per side)
 
-The reference axis is **the forearm itself** (Pose elbow → wrist).
-The displayed angle is the angle of the hand vector
-(wrist → middle MCP) from the axis PERPENDICULAR to the forearm.
+| Joint | Source | Index |
+|---|---|---|
+| Elbow (forearm side) | MediaPipe Pose | `13` (L) / `14` (R) |
+| Wrist (vertex) | MediaPipe Hands | `0` |
+| Middle MCP (hand side) | MediaPipe Hands | `9` |
 
-This works for ANY forearm orientation — sideways with horizontal
-forearm, prayer-stretch with vertical forearm, any diagonal. As long
-as the hand is collinear with the forearm (neutral straight), the
-reading is **90°**. As the wrist bends, the reading moves toward 0
-or 180 depending on bend direction.
+Vertex of the angle is the **wrist**.
 
-| Pose | Neutral reading |
+### Formula — identical to elbow
+
+```
+A  = (elbow − wrist) * aspect-corrected   // forearm side
+B  = (mcp   − wrist) * aspect-corrected   // hand side
+dot      = A · B
+interior = acos(dot / (|A| · |B|)) * 180 / π     // 0..180
+flexion  = 180 − interior                        // clinical convention
+```
+
+x components scaled by `CAMERA_ASPECT_W_OVER_H` (= 4/3) so x and y
+are in the same pixel unit. Exactly the same shape as the elbow
+formula, just with `wrist → elbow` and `wrist → MCP` as the two
+vectors instead of `elbow → shoulder` and `elbow → wrist`.
+
+### Range
+
+| Reading | Pose |
 |---|---|
-| Sideways (forearm horizontal, hand horizontal) | **90°** |
-| Prayer-stretch (forearm vertical, hand vertical) | **90°** |
-| Any diagonal forearm with hand in line | **90°** |
-| Hand bent 90° one way | → **0°** |
-| Hand bent 90° other way | → **180°** |
+| **0°** | Wrist straight — hand continues forearm (vectors anti-parallel) |
+| **~90°** | Wrist bent perpendicular to forearm |
+| **180°** | Wrist folded back parallel to forearm (anatomically rare) |
 
-The signal is continuous through 90 — no reset or fold.
+Wrist mode loads **Pose alongside Hands** (`pose+hands` model kind in
+`useTracking.ts`) so the elbow landmark is available. Without Pose
+the angle is null and the overlay just doesn't draw the angle layer.
 
-### Formula
+### Pose-dependent caveat
 
-```
-forearm = (elbow − wrist)   * aspect-corrected   // from Pose 13/14
-hand    = (mcp   − wrist)   * aspect-corrected   // from Hands 0 → 9
-perp    = rotate90CCW(forearm) = (−forearm.y, forearm.x)
-cos     = (perp · hand) / (|perp| · |hand|)
-angle_deg = acos(cos) * 180 / π        // 0..180, 90 at neutral
-```
+Because the formula reads the geometric interior at the wrist, the
+value of 0° corresponds to "hand vector anti-parallel to forearm
+vector". For poses where the hand DOUBLES BACK along the forearm
+(notably prayer stretch — forearm vertical going elbow→wrist DOWN,
+hand vertical going wrist→MCP UP, so the two vectors are PARALLEL),
+the reading is ~180 at the user's "starting neutral" because the
+wrist IS fully back-folded relative to its anatomical-rest neutral.
+This is the same geometry the elbow tracker has — interior=180 is
+straight (anti-parallel), interior=0 is fold (parallel).
 
-Wrist mode must load **Pose alongside Hands** (already does via the
-`pose+hands` model kind in `useTracking.ts`) so the elbow landmark
-is available. Without Pose, the angle is null and the overlay shows
-only the raw hand skeleton.
+### Smoothing
 
-Range: **0° … 180°**, neutral at 90.
+EMA with `SMOOTHING_FACTOR = 0.3` on the per-hand value, same as
+elbow. Visibility gate matches elbow's: each required landmark
+must have `visibility ≥ 0.2` and be inside the `[0, 1]` frame.
 
-### Secondary: forearm ↔ hand interior angle (prayer stretch)
+### Overlay
 
-For exercises where the forearm is NOT horizontal (notably prayer
-stretch — forearms vertical, hands pressed together), the `0..180`
-wrist deflection above isn't meaningful by itself. The overlay also
-shows a second per-hand value `p:Y°` computed in pixel-space from
-Pose's elbow landmark + Hands' wrist & middle-MCP:
+Mirror of the elbow overlay structure:
 
-```
-forearm = (elbow − wrist) * aspect-corrected
-hand    = (mcp   − wrist) * aspect-corrected
-interior = acos((forearm · hand) / (|forearm| · |hand|)) * 180 / π
-```
-
-For prayer stretch:
-- straight neutral (forearm and hand collinear, both up) → `~0°`
-- wrist bends → interior grows toward 90°
-
-Pose **is** loaded alongside Hands in wrist mode (`pose+hands` model
-kind) specifically so the elbow landmark is available for this
-metric. Pose runs at modelComplexity 0 — minimal overhead.
-
-Stored in `HandTrackingState.rawWrist3DDeg` /
-`smoothedWrist3DDeg` (field names predate the rename to a 2D
-measurement; the value now IS the 2D interior).
+| Element | Wrist | Elbow |
+|---|---|---|
+| Underlay | Raw Hands skeleton (grey) | Raw Pose skeleton (grey) |
+| Reference line | wrist → elbow (forearm) | elbow → shoulder (upper arm) |
+| Active line | wrist → MCP (hand, side colour) | elbow → wrist (forearm, side colour) |
+| Vertex dot | wrist (side colour) | elbow (side colour) |
+| Number | `{flexion}°` above wrist | `{flexion}°` above elbow |
 
 ### 2D / model limitation (literal, do not change)
 

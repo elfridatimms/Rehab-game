@@ -1,9 +1,11 @@
 import type { HolisticResults, TrackingState, Landmark } from '../../types';
 
-// Wrist overlay — raw MediaPipe Hands skeleton as a grey underlay,
-// then the vertical 0° reference + active wrist→MCP line + prominent
-// angle label per hand. No fallback message: if no value, the
-// skeleton stays and the angle layer is just skipped.
+// Wrist overlay — mirrors the elbow overlay's structure.
+//   Layer 1: raw MediaPipe Hands skeleton, semi-transparent grey
+//   Layer 2: forearm reference (wrist → elbow, light grey) + active
+//            line (wrist → MCP, side colour) + flexion-degree label
+// No fallback text: when the angle isn't computable the skeleton
+// stays visible and the angle layer is skipped.
 
 const COLORS = {
   skeleton: 'rgba(180, 180, 180, 0.45)',
@@ -153,17 +155,10 @@ export function drawWristOverlay(
     ctx.arc(wx, wy, 6, 0, Math.PI * 2);
     ctx.fill();
 
-    // Main number: 0..180 scale, neutral horizontal = 90,
-    // bent UP → 180, bent DOWN → 0.
+    // Wrist flexion in degrees — same convention as elbow:
+    //   0   = wrist straight (hand continues forearm)
+    //  ~90  = bent perpendicular to forearm
+    //  180  = folded back parallel to forearm
     drawLabel(ctx, `${Math.round(angle)}°`, wx, wy - 18);
-
-    // Secondary: forearm ↔ hand interior at the wrist (uses Pose
-    // elbow + Hands wrist & MCP). Useful for prayer stretch where
-    // the forearm is vertical and the value reflects how much the
-    // wrist has bent from "straight" (0 at straight, grows with bend).
-    const interior = hand.handState.smoothedWrist3DDeg;
-    if (interior != null) {
-      drawLabel(ctx, `p:${Math.round(interior)}°`, wx, wy + 30, 14);
-    }
   }
 }

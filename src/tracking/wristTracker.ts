@@ -100,36 +100,34 @@ export function updateWristForearmInterior(
 }
 
 /**
- * Wrist angle — pose-independent 0..180 scale, neutral=90.
+ * Wrist angle — identical formula to the elbow tracker, just with the
+ * vertex at the wrist instead of at the elbow.
  *
- * Reads the angle of the hand vector (wrist → middle MCP) from the
- * axis PERPENDICULAR to the forearm (= 90° rotation of the
- * elbow→wrist line). At "hand in line with forearm" the hand vector
- * is perpendicular to the forearm-perpendicular axis → arccos gives
- * 90°. Works for ANY forearm orientation:
+ * Vertex      = wrist (Hands landmark 0)
+ * Vector A    = wrist → elbow (Pose landmark 13/14)   [forearm side]
+ * Vector B    = wrist → middle MCP (Hands landmark 9) [hand side]
  *
- *   - Sideways pose (forearm horizontal, hand horizontal): 90
- *   - Prayer-stretch pose (forearm vertical, hand vertical up): 90
- *   - Any diagonal pose: 90 whenever hand is collinear with forearm
+ *   dot   = A · B
+ *   interior = acos(dot / (|A| · |B|)) * 180 / π        // 0..180
+ *   flexion  = 180 − interior                           // clinical conv
  *
- * As the wrist bends, the hand vector rotates away from the forearm
- * axis toward the perpendicular axis → arccos moves toward 0 or 180:
+ *   0°   = wrist STRAIGHT (hand continues forearm — vectors anti-parallel)
+ *   90°  = wrist bent perpendicular to forearm
+ *   180° = wrist folded back parallel to forearm (anatomically rare)
  *
- *   90  = neutral (hand in line with the forearm)
- *  →0   = hand bent perpendicular to forearm in one direction
- *  →180 = hand bent perpendicular to forearm in the other direction
- *  range 0…180, continuous through 90 with no reset
+ * Same convention as elbow:
+ *   elbow 0 = extended    | wrist 0 = straight
+ *   elbow ~150 = max fold | wrist ~80-90 = anatomical max bend
  *
- * Math (all 2D image plane, x aspect-corrected):
- *   forearm = (elbow − wrist) — from Pose landmark 13/14
- *   hand    = (mcp − wrist)   — from Hands landmark 0 → 9
- *   perp    = rotate90CCW(forearm) = (−forearm.y, forearm.x)
- *   cos     = (perp · hand) / (|perp| · |hand|)
- *   angle   = acos(cos) * 180 / π        // 0..180
+ * x components scaled by CAMERA_ASPECT_W_OVER_H (4/3) so x and y are
+ * in the same pixel unit — matches the elbow tracker exactly.
  *
- * Direction (which bend = 0 vs which = 180) depends on the chosen
- * perpendicular direction and the pose; magnitude of deflection from
- * 90 is the meaningful clinical quantity.
+ * NOTE on prayer-stretch pose (forearm vertical, hand vertical up):
+ * because forearm goes wrist→elbow UP and hand also goes wrist→MCP UP,
+ * the two vectors are PARALLEL, so interior ≈ 0 and flexion ≈ 180.
+ * That is geometrically what's happening — the wrist is fully
+ * back-folded relative to its anatomical neutral. The secondary
+ * "p:Y°" overlay value also reports this interior directly.
  */
 export function updateWristExtension(
   state: HandTrackingState,
@@ -161,28 +159,27 @@ export function updateWristExtension(
   const wrist = handLandmarks[0];
   const middleMCP = handLandmarks[9];
 
-  // x scaled by camera aspect (4/3) so x and y are in the same pixel
-  // unit. Without this the angle is distorted in non-square frames.
-  const fx = (elbow.x - wrist.x) * CAMERA_ASPECT_W_OVER_H;
-  const fy = elbow.y - wrist.y;
-  const hx = (middleMCP.x - wrist.x) * CAMERA_ASPECT_W_OVER_H;
-  const hy = middleMCP.y - wrist.y;
-
-  // forearm-perpendicular axis (90° CCW rotation of forearm vector).
-  const px = -fy;
-  const py = fx;
-
-  const magP = Math.hypot(px, py);
-  const magH = Math.hypot(hx, hy);
-  if (magP === 0 || magH === 0) {
+  // Forearm side: wrist → elbow. Hand side: wrist → MCP. Aspect-corrected.
+  const ab = {
+    x: (elbow.x - wrist.x) * CAMERA_ASPECT_W_OVER_H,
+    y: elbow.y - wrist.y,
+  };
+  const cb = {
+    x: (middleMCP.x - wrist.x) * CAMERA_ASPECT_W_OVER_H,
+    y: middleMCP.y - wrist.y,
+  };
+  const dot = ab.x * cb.x + ab.y * cb.y;
+  const magAB = Math.sqrt(ab.x ** 2 + ab.y ** 2);
+  const magCB = Math.sqrt(cb.x ** 2 + cb.y ** 2);
+  if (magAB === 0 || magCB === 0) {
     state.smoothedWristExtensionDeg = null;
     state.rawWristExtensionDeg = null;
     state.visibility = null;
     return state;
   }
-
-  const cos = Math.max(-1, Math.min(1, (px * hx + py * hy) / (magP * magH)));
-  const angleDeg = (Math.acos(cos) * 180) / Math.PI;
+  const cosAngle = Math.max(-1, Math.min(1, dot / (magAB * magCB)));
+  const interior = (Math.acos(cosAngle) * 180) / Math.PI;
+  const angleDeg = 180 - interior;
 
   state.rawWristExtensionDeg = angleDeg;
   state.visibility = 1;
