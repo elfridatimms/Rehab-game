@@ -87,13 +87,12 @@ convention above (fully extended ≈ 180).
 
 ## Wrist angle (active mode: `wrist`)
 
-### Landmarks (per side)
+### Landmarks (MediaPipe Hands only — no Pose)
 
-| Joint | Source | Index |
-|---|---|---|
-| Elbow (forearm side) | MediaPipe Pose | `13` (L) / `14` (R) |
-| Wrist (vertex) | MediaPipe Hands | `0` |
-| Middle MCP (hand side) | MediaPipe Hands | `9` |
+| Joint | Index |
+|---|---|
+| Wrist root | `0` |
+| Middle-finger MCP | `9` |
 
 Both hands are handled **independently**: each hand has its own
 state and either can be entirely out of frame without affecting the
@@ -101,46 +100,54 @@ other. A single visible hand works.
 
 Vertex of the angle is the **wrist**.
 
-### Formula — identical to elbow
+### Pose / camera setup
+
+Side view, forearm held **UPRIGHT (vertical)**, hand pointing up.
+Bending the wrist tilts the hand left or right in the image. The
+reading is the angle of the hand vector measured from the
+**horizontal axis**.
+
+### Formula — hands-only, angle from horizontal
 
 ```
-A  = (elbow − wrist) * aspect-corrected   // forearm side
-B  = (mcp   − wrist) * aspect-corrected   // hand side
-dot      = A · B
-interior = acos(dot / (|A| · |B|)) * 180 / π     // 0..180
-flexion  = 180 − interior                        // clinical convention
+vert  =  wrist.y − mcp.y                       // +ve when hand is above wrist
+horiz = (wrist.x − mcp.x) * CAMERA_ASPECT_W_OVER_H
+angle =  atan2(vert, horiz) * 180 / π          // hand-up = +90
 ```
 
-`x` components scaled by `CAMERA_ASPECT_W_OVER_H` (= 4/3) so x and
-y are in the same pixel unit. Exactly the same shape as the elbow
-formula, just with `wrist → elbow` and `wrist → MCP` as the two
-vectors instead of `elbow → shoulder` and `elbow → wrist`.
+`x` is scaled by `CAMERA_ASPECT_W_OVER_H` (= 4/3) so the two
+components are in the same pixel unit. Below-horizontal positions
+(`angle < 0`) are clamped to the nearer end of the 0..180 sweep.
+
+The value is computed so the on-screen number matches the drawn
+line exactly: the overlay draws wrist→MCP in mirrored canvas space,
+and the angle of that line above the horizontal reference equals
+this number.
 
 ### Range
 
 | Reading | Pose |
 |---|---|
-| **0°** | Wrist STRAIGHT — hand continues forearm (any orientation) |
-| **~90°** | Wrist bent perpendicular to forearm |
-| **180°** | Wrist folded back parallel to forearm (rare anatomically) |
+| **0°** | Hand tilted fully to one side (horizontal) |
+| **90°** | Hand straight UP — neutral, in line with the upright forearm |
+| **180°** | Hand tilted fully to the other side (horizontal) |
 
-Because the angle is measured against the **forearm direction**
-(not against a fixed canvas axis), the user can hold the arm
-sideways, vertical, diagonal — the neutral straight pose always
-reads ~0.
+### Model / pose limitation (literal, do not change)
+
+- Hands-only. No forearm is tracked — the reference is the canvas
+  horizontal, not the user's forearm.
+- Neutral = 90 holds **only while the forearm is held upright** in
+  the camera plane. A tilted or horizontal forearm will still
+  produce a number, but its interpretation as wrist flex/extend is
+  no longer valid.
 
 ### Visibility / framing
 
 - Wrist (lm0) and middle-finger MCP (lm9) must be present.
-- Elbow landmark (Pose) must be present.
-- **No elbow visibility gate.** A low-visibility elbow is still used.
-  Gating it out broke single-hand exercises whenever the body was
-  partially occluded behind a desk or arm; the angle would null out
-  every other frame. Trade-off: when the elbow is genuinely missing,
-  the formula reads garbage rather than null — but that case is rare,
-  and the alternative was strictly worse.
-- If hand landmarks or Pose results are absent the per-hand smoothed
-  value is set to `null` and the overlay does not draw for that hand.
+- If either is missing the per-hand smoothed value is set to `null`
+  and the overlay does not draw for that hand.
+- MediaPipe Hands has no per-landmark visibility score, so the gate
+  is simply "are the landmarks there?".
 
 ### Smoothing
 
@@ -150,16 +157,18 @@ and noisier, so we trust the new sample less).
 
 ### Model loading
 
-Wrist mode loads **Pose alongside Hands** (`pose+hands` model kind
-in `useTracking.ts`). Fingers mode stays hands-only.
+Wrist mode runs **hands-only** (`hands` model kind in
+`useTracking.ts`). Fingers mode is also hands-only.
 
 ### Overlay drawing (game/wrist/WristOverlay.ts)
 
 - **Underlay:** raw MediaPipe Hands skeleton, semi-transparent grey.
+- **Reference line:** a thin grey **horizontal** line through the
+  wrist (lm0). This is the visible `0°↔180°` axis; the hand's angle
+  above it is the reading (straight up = 90).
 - **Active line:** wrist → middle-MCP, thicker, single side-neutral
   colour (cyan) — using one colour avoids the cyan/pink flicker we
   used to get when MediaPipe Hands' handedness label oscillated
-  between L and R for the same physical hand (common when the two
-  hands are close or only one is in frame).
+  between L and R for the same physical hand.
 - **Vertex dot:** wrist (cyan).
 - **Numeric label:** the angle in degrees, drawn near the wrist.

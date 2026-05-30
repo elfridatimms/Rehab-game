@@ -120,6 +120,17 @@ export function drawWristOverlay(
     const [wx, wy] = toCanvas(wrist, w, h);
     const [mx, my] = toCanvas(mcp, w, h);
 
+    // Horizontal reference line through the wrist. This is the visible
+    // 0°↔180° axis: the hand vector's angle ABOVE this line is the
+    // reported number (straight up = 90, tilt to a side → 0 / 180).
+    const refHalf = Math.max(60, Math.hypot(mx - wx, my - wy) * 0.9);
+    ctx.strokeStyle = COLORS.reference;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(wx - refHalf, wy);
+    ctx.lineTo(wx + refHalf, wy);
+    ctx.stroke();
+
     // Active wrist→MCP (the hand vector that feeds the angle formula).
     // Single colour for both hands to avoid the cyan/pink flicker
     // caused by MediaPipe Hands handedness flipping between frames.

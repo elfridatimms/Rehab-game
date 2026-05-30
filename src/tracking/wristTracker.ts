@@ -31,38 +31,38 @@ export function createHandState(): HandTrackingState {
 }
 
 /**
- * Wrist flexion / extension — same elbow-style formula as before, but
- * with NO elbow visibility gate. The angle is computed against the
- * forearm direction (wrist → elbow), so neutral reads 0 regardless of
- * which way the forearm is pointing (sideways, vertical, diagonal).
+ * Wrist flexion / extension — HANDS-ONLY, side view.
  *
- *   wrist     = handLandmarks[0]                  (vertex)
- *   middleMCP = handLandmarks[9]                  (hand direction)
- *   elbow     = poseLandmarks[13|14]              (forearm direction)
+ * The user holds the forearm UPRIGHT (vertical) and the hand pointing
+ * up; bending the wrist tilts the hand left/right in the image. We
+ * report the angle of the hand vector measured from the HORIZONTAL
+ * axis, so:
  *
- *   A  = (elbow − wrist) * aspect       // forearm side
- *   B  = (mcp   − wrist) * aspect       // hand side
- *   interior = acos(A·B / (|A|·|B|))    // 0..180
- *   flexion  = 180 − interior           // clinical convention
+ *   wrist     = handLandmarks[0]   (vertex)
+ *   middleMCP = handLandmarks[9]   (hand direction)
  *
- *   0°   = wrist STRAIGHT (hand continues forearm — vectors anti-parallel)
- *   ~90° = wrist bent perpendicular to forearm
- *   180° = wrist folded back parallel to forearm (rare anatomically)
+ *   vert  =  wrist.y − mcp.y                    // +ve when hand is ABOVE wrist
+ *   horiz = (wrist.x − mcp.x) * aspect          // signed left/right
+ *   angle =  atan2(vert, horiz) * 180/π         // hand-up = +90
  *
- * Pose is REQUIRED to know where the elbow is, but a missing or
- * low-visibility elbow no longer nulls the angle for the whole frame:
- *   - hand landmarks missing  → angle = null (hand isn't visible)
- *   - pose landmarks missing  → angle = null (forearm unknown)
- *   - elbow with low vis      → still computed (better degraded than nothing)
+ *   0°    = hand tilted fully to one side  (horizontal)
+ *   90°   = hand pointing straight UP — neutral (in line with the
+ *           upright forearm)
+ *   180°  = hand tilted fully to the other side (horizontal)
  *
- * Single hand works: the formula reads per-side, so the other hand can
- * be entirely out of frame.
+ * This is computed so the displayed number matches the on-screen line
+ * EXACTLY: the overlay draws wrist→MCP in mirrored canvas space and the
+ * angle of that line from the horizontal reference equals this value.
+ *
+ * Below-horizontal positions (outside the flex/extend range for an
+ * upright forearm) are clamped to the nearer end of the 0..180 sweep.
+ *
+ * No Pose, no forearm tracking, no visibility gate. Works on a single
+ * hand — the other can be entirely out of frame.
  */
 export function updateWristExtension(
   state: HandTrackingState,
   handLandmarks: Landmark[] | undefined,
-  poseLandmarks: Landmark[] | undefined,
-  side: 'left' | 'right',
 ): HandTrackingState {
   if (!handLandmarks || handLandmarks.length < 10) {
     state.smoothedWristExtensionDeg = null;
@@ -70,49 +70,30 @@ export function updateWristExtension(
     state.visibility = null;
     return state;
   }
-  if (!poseLandmarks || poseLandmarks.length < 17) {
-    state.smoothedWristExtensionDeg = null;
-    state.rawWristExtensionDeg = null;
-    state.visibility = null;
-    return state;
-  }
-
-  const elbow = poseLandmarks[side === 'left' ? 13 : 14];
-  if (!elbow) {
-    state.smoothedWristExtensionDeg = null;
-    state.rawWristExtensionDeg = null;
-    state.visibility = null;
-    return state;
-  }
-  // NOTE: no visibility / in-frame gate on the elbow. A low-vis elbow
-  // can still give a usable direction; gating it out was what broke the
-  // single-hand experience (whole arm hidden behind body → angle null).
-  // We only bail when the landmark is missing outright (handled above).
 
   const wrist = handLandmarks[0];
   const middleMCP = handLandmarks[9];
-
-  // Forearm side: wrist → elbow. Hand side: wrist → MCP. Aspect-corrected.
-  const ab = {
-    x: (elbow.x - wrist.x) * CAMERA_ASPECT_W_OVER_H,
-    y: elbow.y - wrist.y,
-  };
-  const cb = {
-    x: (middleMCP.x - wrist.x) * CAMERA_ASPECT_W_OVER_H,
-    y: middleMCP.y - wrist.y,
-  };
-  const dot = ab.x * cb.x + ab.y * cb.y;
-  const magAB = Math.hypot(ab.x, ab.y);
-  const magCB = Math.hypot(cb.x, cb.y);
-  if (magAB === 0 || magCB === 0) {
+  if (!wrist || !middleMCP) {
     state.smoothedWristExtensionDeg = null;
     state.rawWristExtensionDeg = null;
     state.visibility = null;
     return state;
   }
-  const cosAngle = Math.max(-1, Math.min(1, dot / (magAB * magCB)));
-  const interior = (Math.acos(cosAngle) * 180) / Math.PI;
-  const angleDeg = 180 - interior;
+
+  const vert = wrist.y - middleMCP.y;
+  const horiz = (wrist.x - middleMCP.x) * CAMERA_ASPECT_W_OVER_H;
+
+  if (vert === 0 && horiz === 0) {
+    state.smoothedWristExtensionDeg = null;
+    state.rawWristExtensionDeg = null;
+    state.visibility = null;
+    return state;
+  }
+
+  let angleDeg = (Math.atan2(vert, horiz) * 180) / Math.PI; // -180..180, up = +90
+  // Hand dipped below horizontal — outside the exercise range. Clamp to
+  // the nearer extreme so the number doesn't wrap through negatives.
+  if (angleDeg < 0) angleDeg = horiz >= 0 ? 0 : 180;
 
   state.rawWristExtensionDeg = angleDeg;
   state.visibility = 1;

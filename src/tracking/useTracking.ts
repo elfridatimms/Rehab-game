@@ -89,20 +89,16 @@ function createInitialState(): TrackingState {
 }
 
 // ─── Per-mode model factories ────────────────────────────────
-// v1.30: wrist mode is back to pose+hands. Pose is needed to know
-// where the elbow is so the wrist angle has a reference forearm —
-// without it, "neutral" reads 90 only when the forearm is horizontal,
-// which broke as soon as the user held their hand vertically. The
-// single-hand bug we hit earlier was NOT caused by Pose itself; it
-// was the strict elbow-visibility gate in wristTracker that nulled
-// the angle whenever the body was partially occluded. That gate has
-// been removed — a low-vis elbow is still used. Fingers mode stays
-// hands-only.
+// v1.31: wrist mode is HANDS-ONLY. The user holds the forearm upright
+// and we report the hand's angle from the horizontal axis (hand-up =
+// 90, tilt to either side → 0 / 180). No forearm reference is needed,
+// so no Pose — which also means single-hand exercises work without the
+// body being in frame, and there's no second-model latency.
 type ModelKind = 'pose' | 'hands' | 'pose+hands';
 
 function modelKindForMode(mode: GameMode): ModelKind {
   if (mode === 'elbow') return 'pose';
-  if (mode === 'wrist') return 'pose+hands';
+  // wrist + fingers both run hands-only.
   return 'hands';
 }
 
@@ -310,13 +306,11 @@ export function useTracking(activeMode: GameMode, frameListenerRef?: FrameListen
       updateElbow(s.elbow, results.poseLandmarks, results.poseWorldLandmarks);
       updateForearmRotation(s.elbow, results.poseLandmarks);
     } else {
-      // wrist uses Pose's elbow + Hands' wrist & MCP so the angle is
-      // measured relative to the forearm (neutral=0 in any forearm
-      // orientation). Fingers is hands-only — the per-frame call falls
-      // through to null when no Pose is loaded, which is the correct
-      // behaviour in fingers mode anyway.
-      updateWristExtension(s.leftHand, results.leftHandLandmarks, results.poseLandmarks, 'left');
-      updateWristExtension(s.rightHand, results.rightHandLandmarks, results.poseLandmarks, 'right');
+      // wrist + fingers: hands-only. Wrist reports the hand's angle from
+      // the horizontal axis (forearm-upright assumption): hand straight
+      // up = 90, tilt to either side → 0 / 180. Works on a single hand.
+      updateWristExtension(s.leftHand, results.leftHandLandmarks);
+      updateWristExtension(s.rightHand, results.rightHandLandmarks);
       updateFingerOpenness(s.leftHand, results.leftHandLandmarks);
       updateFingerOpenness(s.rightHand, results.rightHandLandmarks);
     }
