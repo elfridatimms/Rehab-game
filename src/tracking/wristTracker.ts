@@ -3,6 +3,7 @@ import {
   SMOOTHING_FACTOR,
   WRIST_SMOOTHING_FACTOR,
   CAMERA_ASPECT_W_OVER_H,
+  VISIBILITY_TRACK_THRESHOLD,
 } from './constants';
 
 // ─── EMA helpers ──────────────────────────────────────────────
@@ -150,6 +151,19 @@ export function updateWristExtension(
 
   const elbow = poseLandmarks[side === 'left' ? 13 : 14];
   if (!elbow) {
+    state.smoothedWristExtensionDeg = null;
+    state.rawWristExtensionDeg = null;
+    state.visibility = null;
+    return state;
+  }
+
+  // Reject occluded / hallucinated elbow (prayer stretch tends to hide
+  // it behind the body). Without this, a low-vis elbow would still feed
+  // the forearm vector and the angle would jump frame to frame.
+  if (
+    (elbow.visibility ?? 0) < VISIBILITY_TRACK_THRESHOLD ||
+    elbow.x < 0 || elbow.x > 1 || elbow.y < 0 || elbow.y > 1
+  ) {
     state.smoothedWristExtensionDeg = null;
     state.rawWristExtensionDeg = null;
     state.visibility = null;
